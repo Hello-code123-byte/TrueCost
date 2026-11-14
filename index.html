@@ -14,6 +14,7 @@
       --muted: #94a3b8;
       --accent: #10b981;
       --accent-hover: #059669;
+      --error: #ef4444;
     }
 
     * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
@@ -78,6 +79,17 @@
       border-color: var(--accent);
     }
 
+    input.invalid {
+      border-color: var(--error);
+    }
+
+    .field-error {
+      color: var(--error);
+      font-size: 0.75rem;
+      margin-top: 0.25rem;
+      min-height: 1em;
+    }
+
     .dropzone {
       border: 2px dashed var(--border);
       border-radius: 10px;
@@ -98,6 +110,9 @@
       font-size: 0.8rem;
       color: var(--accent);
       margin-top: 0.4rem;
+    }
+    .file-status.error {
+      color: var(--error);
     }
 
     .summary-box {
@@ -173,8 +188,9 @@
 
     <div class="grid-2">
       <div>
-        <label for="infillPct">Est. Infill % (for STL/3MF)</label>
-        <input type="number" id="infillPct" value="15" min="0" max="100" />
+        <label for="infillPct">Est. Infill % (0–100, for STL/3MF)</label>
+        <input type="number" id="infillPct" value="15" min="0" max="100" step="1" />
+        <div class="field-error" id="infillError"></div>
       </div>
       <div>
         <label for="filamentGrams">Filament Used (grams)</label>
@@ -255,6 +271,7 @@
     filamentType: document.getElementById('filamentType'),
     nozzleSize: document.getElementById('nozzleSize'),
     infillPct: document.getElementById('infillPct'),
+    infillError: document.getElementById('infillError'),
     filamentGrams: document.getElementById('filamentGrams'),
     spoolKg: document.getElementById('spoolKg'),
     spoolPrice: document.getElementById('spoolPrice'),
@@ -272,42 +289,65 @@
 
   let lastParsedVolumeCm3 = null;
 
+  function setStatus(message, isError = false) {
+    els.fileStatus.textContent = message;
+    els.fileStatus.classList.toggle('error', isError);
+  }
+
   function formatDuration(hours) {
-    const totalMins = Math.round(hours * 60);
+    const safeHours = Math.max(0, Number.isFinite(hours) ? hours : 0);
+    const totalMins = Math.round(safeHours * 60);
     const h = Math.floor(totalMins / 60);
     const m = totalMins % 60;
     return h + 'h ' + m + 'm';
   }
 
-  function recalculateFromMesh() {
-    if (!lastParsedVolumeCm3) return;
-    const filOpt = els.filamentType.options.item(els.filamentType.selectedIndex);
-    const nozOpt = els.nozzleSize.options.item(els.nozzleSize.selectedIndex);
-    const density = parseFloat(filOpt.getAttribute('data-density'));
-    const flowMm3PerSec = parseFloat(nozOpt.getAttribute('data-flow'));
-    const infill = Math.min(100, Math.max(0, parseFloat(els.infillPct.value) || 15)) / 100;
-
-    const effectiveRatio = 0.25 + (0.75 * infill);
-    const effectiveVolCm3 = lastParsedVolumeCm3 * effectiveRatio;
-    const grams = effectiveVolCm3 * density;
-
-    const effectiveVolMm3 = effectiveVolCm3 * 1000;
-    const extrusionSeconds = (effectiveVolMm3 / flowMm3PerSec) * 1.45;
-    const hours = (extrusionSeconds + 360) / 3600;
-
-    els.filamentGrams.value = grams.toFixed(1);
-    els.printHours.value = hours.toFixed(2);
-  }
-
-  function updateCalculations() {
-    const filOpt = els.filamentType.options.item(els.filamentType.selectedIndex);
-    const steadyWatts = parseFloat(filOpt.getAttribute('data-watts'));
-    const grams = parseFloat(els.filamentGrams.value) || 0;
+  // Strict infill validation: respects 0% and flags empty or out-of-range values
+  function getValidatedInfillFraction() {
+    const raw = els.infillPct.value.trim();
+    if (raw === '') {
+      els.infillPct.classList.add('invalid');
+      els.infillError.textContent = 'Enter a value from 0 to 100.';
+      return null;
+    }
+    const num = Number(raw);
+    if (!Number.isFinite(num) || num < 0 || num > 100) {
+      els.infillPct.classList.add('invalid');
 Use code with caution.
-const spoolGrams = (parseFloat(els.spoolKg.value) || 1) * 1000;
-const spoolPrice = parseFloat(els.spoolPrice.value) || 0;
-const hours = parseFloat(els.printHours.value) || 0;
-const kwhRate = parseFloat(els.kwhRate.value) || 0;
+els.infillError.textContent = 'Must be between 0% and 100%.';
+return null;
+}
+els.infillPct.classList.remove('invalid');
+els.infillError.textContent = '';
+return num / 100;
+}
+function recalculateFromMesh() {
+const infillFraction = getValidatedInfillFraction();
+if (!Number.isFinite(lastParsedVolumeCm3) || lastParsedVolumeCm3 <= 0 || infillFraction === null) {
+return;
+}
+const filOpt = els.filamentType.options.item(els.filamentType.selectedIndex);
+const nozOpt = els.nozzleSize.options.item(els.nozzleSize.selectedIndex);
+const density = parseFloat(filOpt.getAttribute('data-density'));
+const flowMm3PerSec = parseFloat(nozOpt.getAttribute('data-flow'));
+// 25% outer/top/bottom shell allowance + infill applied to remaining 75%
+const effectiveRatio = 0.25 + (0.75 * infillFraction);
+const effectiveVolCm3 = lastParsedVolumeCm3 * effectiveRatio;
+const grams = effectiveVolCm3 * density;
+const effectiveVolMm3 = effectiveVolCm3 * 1000;
+const extrusionSeconds = (effectiveVolMm3 / flowMm3PerSec) * 1.45;
+const hours = (extrusionSeconds + 360) / 3600;
+els.filamentGrams.value = grams.toFixed(1);
+els.printHours.value = hours.toFixed(2);
+}
+function updateCalculations() {
+const filOpt = els.filamentType.options.item(els.filamentType.selectedIndex);
+const steadyWatts = parseFloat(filOpt.getAttribute('data-watts')) || 0;
+const grams = Math.max(0, parseFloat(els.filamentGrams.value) || 0);
+const spoolGrams = Math.max(1, (parseFloat(els.spoolKg.value) || 1) * 1000);
+const spoolPrice = Math.max(0, parseFloat(els.spoolPrice.value) || 0);
+const hours = Math.max(0, parseFloat(els.printHours.value) || 0);
+const kwhRate = Math.max(0, parseFloat(els.kwhRate.value) || 0);
 const pricePerGram = spoolPrice / spoolGrams;
 const matCost = grams * pricePerGram;
 const warmupHours = Math.min(hours, 4 / 60);
@@ -332,83 +372,232 @@ p2.x * (p1.y * p3.z - p3.y * p1.z) +
 p3.x * (p1.y * p2.z - p2.y * p1.z)
 ) / 6.0;
 }
+function validateVolumeCm3(volCm3, triangleCount) {
+if (!triangleCount || triangleCount <= 0) {
+throw new Error('Mesh contains zero valid triangles.');
+}
+if (!Number.isFinite(volCm3) || volCm3 <= 0) {
+throw new Error('Calculated mesh volume is empty or invalid (non-manifold or zero volume).');
+}
+return volCm3;
+}
 function parseSTL(buffer) {
+if (!buffer || buffer.byteLength < 15) {
+throw new Error('STL file is empty or too small.');
+}
 const view = new DataView(buffer);
-const isBinary = buffer.byteLength > 84 &&
+const isBinary = buffer.byteLength >= 84 &&
 (84 + view.getUint32(80, true) * 50 === buffer.byteLength);
 let totalVolMm3 = 0;
+let triangleCount = 0;
 if (isBinary) {
 const triCount = view.getUint32(80, true);
 let offset = 84;
 for (let i = 0; i < triCount; i++) {
-offset += 12;
-const p1 = { x: view.getFloat32(offset, true), y: view.getFloat32(offset + 4, true), z: view.getFloat32(offset + 8, true) };
-const p2 = { x: view.getFloat32(offset + 12, true), y: view.getFloat32(offset + 16, true), z: view.getFloat32(offset + 20, true) };
-const p3 = { x: view.getFloat32(offset + 24, true), y: view.getFloat32(offset + 28, true), z: view.getFloat32(offset + 32, true) };
+offset += 12; // skip normal vector
+const p1 = {
+x: view.getFloat32(offset, true),
+y: view.getFloat32(offset + 4, true),
+z: view.getFloat32(offset + 8, true)
+};
+const p2 = {
+x: view.getFloat32(offset + 12, true),
+y: view.getFloat32(offset + 16, true),
+z: view.getFloat32(offset + 20, true)
+};
+const p3 = {
+x: view.getFloat32(offset + 24, true),
+y: view.getFloat32(offset + 28, true),
+z: view.getFloat32(offset + 32, true)
+};
 totalVolMm3 += signedVolumeOfTriangle(p1, p2, p3);
+triangleCount++;
 offset += 38;
 }
 } else {
 const text = new TextDecoder().decode(buffer);
-const vertexRegex = /vertex\s+([+-]?\d*.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*.?\d+(?:[eE][+-]?\d+)?)/g;
+// Properly escaped decimal point and numeric token matching
+const numPattern = '([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)';
+const vertexRegex = new RegExp(
+'vertex\s+' + numPattern + '\s+' + numPattern + '\s+' + numPattern,
+'gi'
+);
 const verts = [];
 let match;
 while ((match = vertexRegex.exec(text)) !== null) {
-verts.push({ x: parseFloat(match.at(1)), y: parseFloat(match.at(2)), z: parseFloat(match.at(3)) });
+verts.push({
+x: parseFloat(match.at(1)),
+y: parseFloat(match.at(2)),
+z: parseFloat(match.at(3))
+});
 if (verts.length === 3) {
 totalVolMm3 += signedVolumeOfTriangle(verts.at(0), verts.at(1), verts.at(2));
+triangleCount++;
 verts.length = 0;
 }
 }
 }
-return Math.abs(totalVolMm3) / 1000;
+const volCm3 = Math.abs(totalVolMm3) / 1000;
+return validateVolumeCm3(volCm3, triangleCount);
+}
+// Computes absolute volume scale factor from a 3MF 3x4 affine transform string
+function getTransformScaleFactor(transformAttr) {
+if (!transformAttr) return 1;
+const m = transformAttr.trim().split(/\s+/).map(Number);
+if (m.length !== 12 || m.some(v => !Number.isFinite(v))) return 1;
+// 3MF 3x4 matrix is column-major for 3x3 linear part:
+// [m0 m3 m6; m1 m4 m7; m2 m5 m8]
+const det =
+m.at(0) * (m.at(4) * m.at(8) - m.at(7) * m.at(5)) -
+m.at(3) * (m.at(1) * m.at(8) - m.at(7) * m.at(2)) +
+m.at(6) * (m.at(1) * m.at(5) - m.at(4) * m.at(2));
+return Number.isFinite(det) && det !== 0 ? Math.abs(det) : 1;
+}
+function normalizeZipPath(path) {
+return path.replace(/^/+/, '');
 }
 async function parse3MF(buffer) {
+if (typeof JSZip === 'undefined') {
+throw new Error('JSZip library failed to load. Check your internet connection.');
+}
 const zip = await JSZip.loadAsync(buffer);
-let totalVolMm3 = 0;
-const modelFiles = Object.keys(zip.files).filter(name => name.endsWith('.model'));
-for (const fileName of modelFiles) {
-const xmlText = await zip.files[fileName].async('text');
+const parsedDocs = new Map();
+async function getModelDoc(zipPath) {
+const cleanPath = normalizeZipPath(zipPath);
+if (parsedDocs.has(cleanPath)) return parsedDocs.get(cleanPath);
+const entry = zip.file(cleanPath) ||
+Object.values(zip.files).find(f => normalizeZipPath(f.name).toLowerCase() === cleanPath.toLowerCase());
+if (!entry) {
+throw new Error('Missing referenced 3MF model part: ' + cleanPath);
+}
+const xmlText = await entry.async('text');
 const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-const meshes = doc.querySelectorAll('mesh');
-meshes.forEach(mesh => {
-const vertices = Array.from(mesh.querySelectorAll('vertices vertex')).map(v => ({
+if (doc.querySelector('parsererror')) {
+throw new Error('Malformed XML in ' + cleanPath);
+}
+parsedDocs.set(cleanPath, doc);
+return doc;
+}
+// Find primary 3D model path (defaults to 3D/3dmodel.model per 3MF spec)
+let rootModelPath = '3D/3dmodel.model';
+if (!zip.file(rootModelPath)) {
+const fallback = Object.keys(zip.files).find(n => n.toLowerCase().endsWith('3dmodel.model')) ||
+Object.keys(zip.files).find(n => n.toLowerCase().endsWith('.model'));
+if (!fallback) throw new Error('No .model file found inside .3mf archive.');
+rootModelPath = normalizeZipPath(fallback);
+}
+const rootDoc = await getModelDoc(rootModelPath);
+const unitAttr = (rootDoc.documentElement.getAttribute('unit') || 'millimeter').toLowerCase();
+const unitToMm = {
+micron: 0.001,
+millimeter: 1,
+centimeter: 10,
+inch: 25.4,
+foot: 304.8,
+meter: 1000
+};
+const linearScale = unitToMm[unitAttr] || 1;
+const unitVolumeFactor = Math.pow(linearScale, 3);
+const volumeCache = new Map();
+let totalTriangles = 0;
+async function computeObjectVolumeMm3(modelPath, objectId, visited = new Set()) {
+const cacheKey = modelPath + '#' + objectId;
+if (visited.has(cacheKey)) {
+throw new Error('Circular component reference detected in 3MF.');
+}
+if (volumeCache.has(cacheKey)) {
+return volumeCache.get(cacheKey);
+}
+const doc = await getModelDoc(modelPath);
+const obj = Array.from(doc.getElementsByTagName('object')).find(
+el => el.getAttribute('id') === String(objectId)
+);
+if (!obj) return 0;
+const nextVisited = new Set(visited);
+nextVisited.add(cacheKey);
+let objVolMm3 = 0;
+// 1. Direct mesh geometry on this object
+const meshEl = obj.getElementsByTagName('mesh').item(0);
+if (meshEl) {
+const vertices = Array.from(meshEl.getElementsByTagName('vertex')).map(v => ({
 x: parseFloat(v.getAttribute('x')),
 y: parseFloat(v.getAttribute('y')),
 z: parseFloat(v.getAttribute('z'))
 }));
-mesh.querySelectorAll('triangles triangle').forEach(t => {
+let meshSignedVol = 0;
+const triangles = meshEl.getElementsByTagName('triangle');
+for (let i = 0; i < triangles.length; i++) {
+const t = triangles.item(i);
 const v1 = vertices.at(parseInt(t.getAttribute('v1'), 10));
 const v2 = vertices.at(parseInt(t.getAttribute('v2'), 10));
 const v3 = vertices.at(parseInt(t.getAttribute('v3'), 10));
 if (v1 && v2 && v3) {
-totalVolMm3 += signedVolumeOfTriangle(v1, v2, v3);
+meshSignedVol += signedVolumeOfTriangle(v1, v2, v3);
+totalTriangles++;
 }
-});
-});
 }
-return Math.abs(totalVolMm3) / 1000;
+objVolMm3 += Math.abs(meshSignedVol) * unitVolumeFactor;
+}
+// 2. Referenced child components (including external sub-models via p:path)
+const components = obj.getElementsByTagName('component');
+for (let i = 0; i < components.length; i++) {
+const comp = components.item(i);
+const targetId = comp.getAttribute('objectid');
+const extPath = comp.getAttribute('p:path') || comp.getAttributeNS('microsoft.com', 'path');
+const targetModelPath = extPath ? normalizeZipPath(extPath) : modelPath;
+const scale = getTransformScaleFactor(comp.getAttribute('transform'));
+const childVol = await computeObjectVolumeMm3(targetModelPath, targetId, nextVisited);
+objVolMm3 += childVol * scale;
+}
+volumeCache.set(cacheKey, objVolMm3);
+return objVolMm3;
+}
+// Traverse  elements so only instantiated parts are counted
+const buildItems = Array.from(rootDoc.getElementsByTagName('item'));
+let totalBuildVolMm3 = 0;
+if (buildItems.length > 0) {
+for (const item of buildItems) {
+const printable = item.getAttribute('printable');
+if (printable === '0' || printable === 'false') continue;
+const objId = item.getAttribute('objectid');
+const scale = getTransformScaleFactor(item.getAttribute('transform'));
+const itemVol = await computeObjectVolumeMm3(rootModelPath, objId);
+totalBuildVolMm3 += itemVol * scale;
+}
+} else {
+// Fallback if a minimal 3MF lacks  items: sum top-level objects once
+const objects = Array.from(rootDoc.getElementsByTagName('object'));
+for (const obj of objects) {
+totalBuildVolMm3 += await computeObjectVolumeMm3(rootModelPath, obj.getAttribute('id'));
+}
+}
+const volCm3 = totalBuildVolMm3 / 1000;
+return validateVolumeCm3(volCm3, totalTriangles);
 }
 async function handleFile(file) {
 if (!file) return;
 const ext = file.name.split('.').pop().toLowerCase();
-els.fileStatus.textContent = 'Parsing ' + file.name + '...';
+setStatus('Parsing ' + file.name + '...', false);
 try {
 const buffer = await file.arrayBuffer();
+let parsedVol;
 if (ext === 'stl') {
-lastParsedVolumeCm3 = parseSTL(buffer);
+parsedVol = parseSTL(buffer);
 } else if (ext === '3mf') {
-lastParsedVolumeCm3 = await parse3MF(buffer);
+parsedVol = await parse3MF(buffer);
 } else {
-els.fileStatus.textContent = 'Unsupported file format. Please upload .stl or .3mf.';
+lastParsedVolumeCm3 = null;
+setStatus('Unsupported file format. Please upload .stl or .3mf.', true);
 return;
 }
-els.fileStatus.textContent = 'Loaded: ' + file.name + ' (' + lastParsedVolumeCm3.toFixed(1) + ' cm³ solid mesh)';
+lastParsedVolumeCm3 = parsedVol;
+setStatus('Loaded: ' + file.name + ' (' + parsedVol.toFixed(1) + ' cm³ solid mesh)', false);
 recalculateFromMesh();
 updateCalculations();
 } catch (err) {
 console.error(err);
-els.fileStatus.textContent = 'Error reading mesh file. Check console for details.';
+lastParsedVolumeCm3 = null;
+setStatus(err.message || 'Error reading mesh file.', true);
 }
 }
 els.dropzone.addEventListener('click', () => els.fileInput.click());
@@ -423,8 +612,14 @@ e.preventDefault();
 els.dropzone.classList.remove('dragover');
 handleFile(e.dataTransfer.files.item(0));
 });
-['filamentType', 'nozzleSize', 'infillPct'].forEach(id => {
+['filamentType', 'nozzleSize'].forEach(id => {
 els[id].addEventListener('change', () => {
+recalculateFromMesh();
+updateCalculations();
+});
+});
+['input', 'change'].forEach(evt => {
+els.infillPct.addEventListener(evt, () => {
 recalculateFromMesh();
 updateCalculations();
 });
@@ -432,4 +627,5 @@ updateCalculations();
 ['filamentGrams', 'spoolKg', 'spoolPrice', 'printHours', 'kwhRate'].forEach(id => {
 els[id].addEventListener('input', updateCalculations);
 });
+getValidatedInfillFraction();
 updateCalculations();
