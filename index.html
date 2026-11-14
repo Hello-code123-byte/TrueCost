@@ -5,304 +5,223 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Bambu Lab P2S Cost & Time Estimator (V5)</title>
   <style>
+  :root {
+    --bg: #0a0e13; --surface: #121921; --surface-2: #0d1218; --border: #222d3b;
+    --text: #e8edf3; --muted: #8493a6; --accent: #34d399; --accent-ink: #052e1f;
+    --accent-soft: rgba(52,211,153,.12); --warn: #fbbf24; --error: #f87171;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 12px 32px rgba(0,0,0,.25);
+    color-scheme: dark;
+  }
+  @media (prefers-color-scheme: light) {
     :root {
-      --bg: #0f172a;
-      --card: #1e293b;
-      --border: #334155;
-      --text: #f8fafc;
-      --muted: #94a3b8;
-      --accent: #10b981;
-      --accent-hover: #059669;
-      --warn: #f59e0b;
-      --error: #ef4444;
+      --bg: #f4f6f9; --surface: #ffffff; --surface-2: #f6f8fb; --border: #e2e8f0;
+      --text: #0f172a; --muted: #64748b; --accent: #059669; --accent-ink: #ffffff;
+      --accent-soft: rgba(5,150,105,.09); --warn: #b45309; --error: #dc2626;
+      --shadow: 0 1px 2px rgba(15,23,42,.05), 0 12px 32px rgba(15,23,42,.06);
+      color-scheme: light;
     }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.5rem 1.25rem 3rem; background: var(--bg); color: var(--text);
+    font: 15px/1.5 Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 1040px; margin: 0 auto; }
+  header { margin-bottom: 1.75rem; }
+  header h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -.02em; margin: 0 0 .25rem; }
+  header p { margin: 0; color: var(--muted); }
+  .badge {
+    display: inline-block; font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+    color: var(--accent); background: var(--accent-soft); padding: .2rem .6rem; border-radius: 999px; margin-bottom: .6rem;
+  }
+  .container { display: grid; grid-template-columns: 1.2fr 1fr; gap: 1.5rem; align-items: start; }
+  @media (max-width: 768px) { .container { grid-template-columns: 1fr; } .results { position: static !important; } }
+  .stack { display: grid; gap: 1.25rem; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    padding: 1.4rem; box-shadow: var(--shadow);
+  }
+  .card h2 { font-size: .8rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0 0 1rem; }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .grid-2 + .grid-2 { margin-top: 1rem; }
+  @media (max-width: 480px) { .grid-2 { grid-template-columns: 1fr; } }
+  label { display: block; font-size: .8rem; font-weight: 500; color: var(--muted); margin-bottom: .4rem; }
+  input, select {
+    width: 100%; height: 42px; padding: 0 .85rem; font: inherit; color: var(--text);
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  select { appearance: none; padding-right: 2.2rem; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' fill='none' stroke='%238493a6' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right .85rem center; }
+  input:hover, select:hover { border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  input.invalid { border-color: var(--error); box-shadow: 0 0 0 3px color-mix(in srgb, var(--error) 15%, transparent); }
+  input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type=number] { -moz-appearance: textfield; padding-right: 3.2rem; }
+  .input-wrap { position: relative; }
+  .unit { position: absolute; right: .85rem; top: 50%; transform: translateY(-50%); font-size: .8rem; color: var(--muted); pointer-events: none; }
+  .field-error { color: var(--error); font-size: .75rem; margin-top: .3rem; min-height: 0; }
+  .field-error:empty { display: none; }
+  .hint { font-size: .75rem; color: var(--muted); margin-top: .3rem; }
 
-    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
-    body {
-      margin: 0;
-      padding: 2rem 1rem;
-      background: var(--bg);
-      color: var(--text);
-      display: flex;
-      justify-content: center;
-    }
+  .dropzone {
+    display: flex; flex-direction: column; align-items: center; gap: .35rem; text-align: center;
+    border: 1.5px dashed var(--border); border-radius: 14px; padding: 1.6rem 1rem; cursor: pointer;
+    background: var(--surface-2); transition: border-color .15s, background .15s;
+  }
+  .dropzone:hover, .dropzone.dragover { border-color: var(--accent); background: var(--accent-soft); }
+  .dropzone .icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+  .dropzone strong { font-weight: 600; }
+  .dropzone .sub { font-size: .8rem; color: var(--muted); }
+  .dropzone input { display: none; }
+  .file-status { font-size: .8rem; color: var(--muted); }
+  .file-status.warn { color: var(--warn); }
+  .file-status.error { color: var(--error); }
 
-    .container {
-      width: 100%;
-      max-width: 920px;
-      display: grid;
-      grid-template-columns: 1.2fr 1fr;
-      gap: 1.5rem;
-    }
-
-    @media (max-width: 768px) {
-      .container { grid-template-columns: 1fr; }
-    }
-
-    .card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 1.5rem;
-    }
-
-    h1 { font-size: 1.35rem; margin: 0 0 0.25rem; }
-    h2 { font-size: 1.05rem; margin: 0 0 1rem; color: var(--accent); }
-    p.sub { color: var(--muted); font-size: 0.875rem; margin: 0 0 1.25rem; }
-
-    .grid-2 {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 1rem;
-      margin-bottom: 0.65rem;
-    }
-
-    label {
-      display: block;
-      font-size: 0.8rem;
-      color: var(--muted);
-      margin-bottom: 0.35rem;
-    }
-
-    input, select {
-      width: 100%;
-      padding: 0.6rem 0.75rem;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      color: var(--text);
-      font-size: 0.95rem;
-    }
-
-    input:focus, select:focus {
-      outline: none;
-      border-color: var(--accent);
-    }
-
-    input.invalid {
-      border-color: var(--error);
-    }
-
-    .field-error {
-      color: var(--error);
-      font-size: 0.74rem;
-      margin-top: 0.25rem;
-      min-height: 1.05em;
-    }
-
-    .dropzone {
-      border: 2px dashed var(--border);
-      border-radius: 10px;
-      padding: 1.25rem;
-      text-align: center;
-      cursor: pointer;
-      margin-bottom: 1.25rem;
-      transition: border-color 0.2s, background 0.2s;
-    }
-
-    .dropzone:hover, .dropzone.dragover {
-      border-color: var(--accent);
-      background: rgba(16, 185, 129, 0.06);
-    }
-
-    .dropzone input { display: none; }
-    .file-status {
-      font-size: 0.8rem;
-      color: var(--accent);
-      margin-top: 0.4rem;
-    }
-    .file-status.warn { color: var(--warn); }
-    .file-status.error { color: var(--error); }
-
-    .summary-box {
-      background: var(--bg);
-      border-radius: 10px;
-      padding: 1.25rem;
-      border: 1px solid var(--border);
-      margin-bottom: 1rem;
-    }
-
-    .total-label { font-size: 0.85rem; color: var(--muted); }
-    .total-value {
-      font-size: 2.25rem;
-      font-weight: 700;
-      color: var(--accent);
-      margin: 0.2rem 0 0.75rem;
-    }
-
-    .line-item {
-      display: flex;
-      justify-content: space-between;
-      padding: 0.55rem 0;
-      border-bottom: 1px solid var(--border);
-      font-size: 0.9rem;
-    }
-
-    .line-item:last-child { border-bottom: none; }
-    .line-item span:first-child { color: var(--muted); }
-
-    .note {
-      font-size: 0.78rem;
-      color: var(--muted);
-      line-height: 1.45;
-      margin-top: 1rem;
-    }
-
-    .test-bar {
-      margin-top: 1rem;
-      padding-top: 0.85rem;
-      border-top: 1px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 0.75rem;
-    }
-
-    button.secondary {
-      background: var(--bg);
-      color: var(--text);
-      border: 1px solid var(--border);
-      padding: 0.45rem 0.75rem;
-      border-radius: 6px;
-      font-size: 0.78rem;
-      cursor: pointer;
-      white-space: nowrap;
-    }
-
-    button.secondary:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .test-output {
-      font-size: 0.75rem;
-      color: var(--muted);
-    }
-  </style>
+  .results { position: sticky; top: 1.5rem; }
+  .total-box {
+    border-radius: 14px; padding: 1.3rem; margin-bottom: 1.1rem;
+    background: linear-gradient(135deg, var(--accent-soft), transparent 70%), var(--surface-2);
+    border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  }
+  .total-label { font-size: .8rem; color: var(--muted); }
+  .total-value { font-size: 2.8rem; font-weight: 700; letter-spacing: -.03em; line-height: 1.1; color: var(--accent); margin: .2rem 0 .9rem; font-variant-numeric: tabular-nums; }
+  .time-pill { display: flex; justify-content: space-between; align-items: center; padding-top: .8rem; border-top: 1px solid var(--border); font-size: .88rem; color: var(--muted); }
+  .time-pill strong { color: var(--text); font-size: 1rem; font-variant-numeric: tabular-nums; }
+  .line-item { display: flex; justify-content: space-between; gap: 1rem; padding: .7rem 0; border-bottom: 1px solid var(--border); font-size: .9rem; }
+  .line-item:last-of-type { border-bottom: none; }
+  .line-item > span:first-child { color: var(--muted); }
+  .line-item > span:last-child { font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+  .note { font-size: .78rem; color: var(--muted); line-height: 1.5; margin: 1rem 0 0; padding: .8rem .9rem; background: var(--surface-2); border-radius: 10px; }
+  .test-bar { margin-top: 1rem; display: flex; align-items: center; justify-content: space-between; gap: .75rem; }
+  button.secondary {
+    font: inherit; font-size: .8rem; font-weight: 500; color: var(--text); background: transparent;
+    border: 1px solid var(--border); padding: .4rem .8rem; border-radius: 8px; cursor: pointer; white-space: nowrap;
+    transition: border-color .15s, color .15s;
+  }
+  button.secondary:hover { border-color: var(--accent); color: var(--accent); }
+  .test-output { font-size: .75rem; color: var(--muted); text-align: right; }
+</style>
 </head>
 <body>
+<div class="page">
+  <header>
+    <span class="badge">Bambu Lab P2S</span>
+    <h1>Print Cost &amp; Time Estimator</h1>
+    <p>Upload a model to auto-estimate weight and time, or enter your slicer values manually.</p>
+  </header>
 
-<div class="container">
-  <div class="card">
-    <h1>Bambu Lab P2S Estimator</h1>
-    <p class="sub">Upload a model to auto-estimate weight & time, or enter slicer values manually.</p>
+  <div class="container">
+    <div class="stack">
+      <section class="card">
+        <h2>Model</h2>
+        <div class="dropzone" id="dropzone">
+          <div class="icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0l-4 4m4-4l4 4"/><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"/></svg>
+          </div>
+          <strong>Drop an .STL or .3MF file</strong>
+          <span class="sub">or click to browse</span>
+          <div class="file-status" id="fileStatus">No file loaded — manual mode active</div>
+          <input type="file" id="fileInput" accept=".stl,.3mf" />
+        </div>
+      </section>
 
-    <div class="dropzone" id="dropzone">
-      <strong>Drop .STL or .3MF file here</strong> (or click to browse)
-      <div class="file-status" id="fileStatus">No file loaded — manual mode active</div>
-      <input type="file" id="fileInput" accept=".stl,.3mf" />
+      <section class="card">
+        <h2>Material &amp; Nozzle</h2>
+        <div class="grid-2">
+          <div>
+            <label for="filamentType">Filament type</label>
+            <select id="filamentType">
+              <option value="PLA" data-density="1.24" data-watts="180">PLA (1.24 g/cm³)</option>
+              <option value="PETG" data-density="1.27" data-watts="200">PETG (1.27 g/cm³)</option>
+              <option value="ABS" data-density="1.04" data-watts="240">ABS (1.04 g/cm³)</option>
+              <option value="ASA" data-density="1.07" data-watts="245">ASA (1.07 g/cm³)</option>
+              <option value="TPU" data-density="1.21" data-watts="185">TPU (1.21 g/cm³)</option>
+              <option value="PA" data-density="1.14" data-watts="250">PA / Nylon (1.14 g/cm³)</option>
+              <option value="PC" data-density="1.20" data-watts="255">PC (1.20 g/cm³)</option>
+            </select>
+          </div>
+          <div>
+            <label for="nozzleSize">Nozzle diameter</label>
+            <select id="nozzleSize">
+              <option value="0.2" data-flow="2.5">0.2 mm (Fine Detail)</option>
+              <option value="0.4" data-flow="12" selected>0.4 mm (Standard)</option>
+              <option value="0.6" data-flow="20">0.6 mm (Fast / Structural)</option>
+              <option value="0.8" data-flow="26">0.8 mm (Draft / Heavy)</option>
+            </select>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div>
+            <label for="spoolKg">Spool weight</label>
+            <select id="spoolKg">
+              <option value="0.25">0.25 kg (250 g)</option>
+              <option value="0.5">0.5 kg (500 g)</option>
+              <option value="1" selected>1.0 kg (1,000 g)</option>
+              <option value="2">2.0 kg (2,000 g)</option>
+              <option value="3">3.0 kg (3,000 g)</option>
+              <option value="5">5.0 kg (5,000 g)</option>
+            </select>
+          </div>
+          <div>
+            <label for="spoolPrice">Spool price</label>
+            <div class="input-wrap"><input type="number" id="spoolPrice" value="22.00" min="0" step="0.01" /><span class="unit">$</span></div>
+            <div class="field-error" id="spoolPriceError"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Print Settings</h2>
+        <div class="grid-2">
+          <div>
+            <label for="infillPct">Estimated infill (for uploads)</label>
+            <div class="input-wrap"><input type="number" id="infillPct" value="15" min="0" max="100" step="1" /><span class="unit">%</span></div>
+            <div class="field-error" id="infillPctError"></div>
+          </div>
+          <div>
+            <label for="filamentGrams">Filament used</label>
+            <div class="input-wrap"><input type="number" id="filamentGrams" value="85" min="0" step="0.1" /><span class="unit">g</span></div>
+            <div class="field-error" id="filamentGramsError"></div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div>
+            <label for="printHours">Estimated print time</label>
+            <div class="input-wrap"><input type="number" id="printHours" value="2.5" min="0" step="0.05" /><span class="unit">hrs</span></div>
+            <div class="field-error" id="printHoursError"></div>
+          </div>
+          <div>
+            <label for="kwhRate">Electricity rate</label>
+            <div class="input-wrap"><input type="number" id="kwhRate" value="0.16" min="0" step="0.01" /><span class="unit">$/kWh</span></div>
+            <div class="field-error" id="kwhRateError"></div>
+          </div>
+        </div>
+      </section>
     </div>
 
-    <div class="grid-2">
-      <div>
-        <label for="filamentType">Filament Type</label>
-        <select id="filamentType">
-          <option value="PLA" data-density="1.24" data-watts="180">PLA (1.24 g/cm³)</option>
-          <option value="PETG" data-density="1.27" data-watts="200">PETG (1.27 g/cm³)</option>
-          <option value="ABS" data-density="1.04" data-watts="240">ABS (1.04 g/cm³)</option>
-          <option value="ASA" data-density="1.07" data-watts="245">ASA (1.07 g/cm³)</option>
-          <option value="TPU" data-density="1.21" data-watts="185">TPU (1.21 g/cm³)</option>
-          <option value="PA" data-density="1.14" data-watts="250">PA / Nylon (1.14 g/cm³)</option>
-          <option value="PC" data-density="1.20" data-watts="255">PC (1.20 g/cm³)</option>
-        </select>
-        <div class="field-error"></div>
+    <aside class="card results">
+      <h2>Estimate</h2>
+      <div class="total-box">
+        <div class="total-label">Total print cost</div>
+        <div class="total-value" id="totalCost">$0.00</div>
+        <div class="time-pill"><span>Print duration</span><strong id="formattedTime">2h 30m</strong></div>
       </div>
-      <div>
-        <label for="nozzleSize">Nozzle Diameter</label>
-        <select id="nozzleSize">
-          <option value="0.2" data-flow="2.5">0.2 mm (Fine Detail)</option>
-          <option value="0.4" data-flow="12" selected>0.4 mm (Standard)</option>
-          <option value="0.6" data-flow="20">0.6 mm (Fast / Structural)</option>
-          <option value="0.8" data-flow="26">0.8 mm (Draft / Heavy)</option>
-        </select>
-        <div class="field-error"></div>
-      </div>
-    </div>
 
-    <div class="grid-2">
-      <div>
-        <label for="infillPct">Est. Infill % (0–100, for STL/3MF)</label>
-        <input type="number" id="infillPct" value="15" min="0" max="100" step="1" />
-        <div class="field-error" id="infillPctError"></div>
-      </div>
-      <div>
-        <label for="filamentGrams">Filament Used (grams)</label>
-        <input type="number" id="filamentGrams" value="85" min="0" step="0.1" />
-        <div class="field-error" id="filamentGramsError"></div>
-      </div>
-    </div>
+      <div class="line-item"><span>Filament (<span id="costPerKg">$22.00</span>/kg)</span><span id="filamentCost">$0.00</span></div>
+      <div class="line-item"><span>Electricity (<span id="kwhUsed">0.00</span> kWh)</span><span id="electricityCost">$0.00</span></div>
+      <div class="line-item"><span>VentoBox filter wear (~$0.08/hr)</span><span id="filterCost">$0.00</span></div>
+      <div class="line-item"><span>Avg. power draw</span><span id="avgWatts">180 W</span></div>
 
-    <div class="grid-2">
-      <div>
-        <label for="spoolKg">Spool Weight (kg)</label>
-        <select id="spoolKg">
-          <option value="0.25">0.25 kg (250g)</option>
-          <option value="0.5">0.5 kg (500g)</option>
-          <option value="1" selected>1.0 kg (1,000g)</option>
-          <option value="2">2.0 kg (2,000g)</option>
-          <option value="3">3.0 kg (3,000g)</option>
-          <option value="5">5.0 kg (5,000g)</option>
-        </select>
-        <div class="field-error"></div>
+      <p class="note"><strong>Power model:</strong> ~1,000 W for the first ~4 minutes of bed/nozzle heat-up, then steady-state draw for your selected filament.</p>
+
+      <div class="test-bar">
+        <button type="button" class="secondary" id="runSelfTest">Run self-test</button>
+        <span class="test-output" id="testOutput">Tests STL, 3MF &amp; transforms</span>
       </div>
-      <div>
-        <label for="spoolPrice">Spool Price ($)</label>
-        <input type="number" id="spoolPrice" value="22.00" min="0" step="0.01" />
-        <div class="field-error" id="spoolPriceError"></div>
-      </div>
-    </div>
-
-    <div class="grid-2">
-      <div>
-        <label for="printHours">Est. Print Time (hours)</label>
-        <input type="number" id="printHours" value="2.5" min="0" step="0.05" />
-        <div class="field-error" id="printHoursError"></div>
-      </div>
-      <div>
-        <label for="kwhRate">Electricity Rate ($/kWh)</label>
-        <input type="number" id="kwhRate" value="0.16" min="0" step="0.01" />
-        <div class="field-error" id="kwhRateError"></div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Cost & Time Breakdown</h2>
-
-    <div class="summary-box">
-      <div class="total-label">Total Estimated Print Cost</div>
-      <div class="total-value" id="totalCost">$0.00</div>
-      <div class="line-item">
-        <span>Estimated Print Duration</span>
-        <strong id="formattedTime">2h 30m</strong>
-      </div>
-    </div>
-
-    <div class="line-item">
-      <span>Filament Cost (<span id="costPerKg">$22.00</span>/kg)</span>
-      <span id="filamentCost">$0.00</span>
-    </div>
-    <div class="line-item">
-      <span>P2S Electricity (<span id="kwhUsed">0.00</span> kWh)</span>
-      <span id="electricityCost">$0.00</span>
-    </div>
-    <div class="line-item">
-      <span>VentoBox Filter Wear (~$0.08/hr)</span>
-      <span id="filterCost">$0.00</span>
-    </div>
-    <div class="line-item">
-      <span>Avg. P2S Power Draw</span>
-      <span id="avgWatts">180 W</span>
-    </div>
-
-    <p class="note">
-      <strong>P2S Power Model:</strong> Includes the ~1,000 W initial bed/nozzle heat-up surge (approx. 4 minutes) plus steady-state chamber/heater draw based on your selected filament profile.
-    </p>
-
-    <div class="test-bar">
-      <button type="button" class="secondary" id="runSelfTest">Run Self-Test</button>
-      <span class="test-output" id="testOutput">Tests STL, 3MF & transforms</span>
-    </div>
+    </aside>
   </div>
 </div>
 
