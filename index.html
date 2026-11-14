@@ -3,8 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bambu Lab P2S Cost & Time Estimator (V3)</title>
-  <script src="https://cloudflare.com"></script>
+  <title>Bambu Lab P2S Cost & Time Estimator (V5)</title>
   <style>
     :root {
       --bg: #0f172a;
@@ -167,6 +166,7 @@
       border-radius: 6px;
       font-size: 0.78rem;
       cursor: pointer;
+      white-space: nowrap;
     }
 
     button.secondary:hover {
@@ -300,8 +300,8 @@
     </p>
 
     <div class="test-bar">
-      <button type="button" class="secondary" id="runSelfTest">Run Volume Self-Test</button>
-      <span class="test-output" id="testOutput">20mm cube = 8.00 cm³</span>
+      <button type="button" class="secondary" id="runSelfTest">Run Self-Test</button>
+      <span class="test-output" id="testOutput">Tests STL, 3MF & transforms</span>
     </div>
   </div>
 </div>
@@ -321,8 +321,8 @@
     spoolPrice: document.getElementById('spoolPrice'),
     spoolPriceError: document.getElementById('spoolPriceError'),
     printHours: document.getElementById('printHours'),
+    printHoursError: document.getElementById('printHoursError'),
 Use code with caution.
-printHoursError: document.getElementById('printHoursError'),
 kwhRate: document.getElementById('kwhRate'),
 kwhRateError: document.getElementById('kwhRateError'),
 totalCost: document.getElementById('totalCost'),
@@ -337,16 +337,59 @@ runSelfTest: document.getElementById('runSelfTest'),
 testOutput: document.getElementById('testOutput')
 };
 let lastParsedVolumeCm3 = null;
+let jsZipLoadPromise = null;
 function setStatus(message, state = 'ok') {
 els.fileStatus.textContent = message;
 els.fileStatus.classList.remove('warn', 'error');
 if (state === 'warn') els.fileStatus.classList.add('warn');
 if (state === 'error') els.fileStatus.classList.add('error');
 }
-// Verify JSZip availability on startup
-if (typeof JSZip === 'undefined') {
-setStatus('Warning: JSZip failed to load (.3mf unavailable; .stl & manual modes work)', 'warn');
+// Dynamically load JSZip 3.10.1 with fallback CDN (avoids hardcoded URL literals that copy-paste tools shorten)
+function ensureJSZip() {
+if (typeof window.JSZip !== 'undefined') {
+return Promise.resolve(window.JSZip);
 }
+if (jsZipLoadPromise) {
+return jsZipLoadPromise;
+}
+const proto = 'https:' + '//';
+const urls = Array.of(
+proto + 'cdnjs.cloudflare.com' + '/ajax/libs/jszip/3.10.1/jszip.min.js',
+proto + 'cdn.jsdelivr.net' + '/npm/jszip@3.10.1/dist/jszip.min.js'
+);
+jsZipLoadPromise = new Promise((resolve, reject) => {
+let idx = 0;
+function tryNext() {
+if (typeof window.JSZip !== 'undefined') {
+resolve(window.JSZip);
+return;
+}
+if (idx >= urls.length) {
+jsZipLoadPromise = null;
+reject(new Error('Could not load JSZip 3.10.1 from CDN. Check internet connection.'));
+return;
+}
+const script = document.createElement('script');
+script.src = urls.at(idx++);
+script.async = true;
+script.onload = () => {
+if (typeof window.JSZip !== 'undefined') {
+resolve(window.JSZip);
+} else {
+tryNext();
+}
+};
+script.onerror = () => tryNext();
+document.head.appendChild(script);
+}
+tryNext();
+});
+return jsZipLoadPromise;
+}
+// Preload JSZip silently on startup
+ensureJSZip().catch(() => {
+setStatus('Offline mode: .stl & manual inputs active (connect online for .3mf)', 'warn');
+});
 function formatDuration(hours) {
 const safeHours = Math.max(0, Number.isFinite(hours) ? hours : 0);
 const totalMins = Math.round(safeHours * 60);
@@ -354,8 +397,10 @@ const h = Math.floor(totalMins / 60);
 const m = totalMins % 60;
 return h + 'h ' + m + 'm';
 }
-// Unified numeric field validator (flags empty, non-finite, negative, or > max)
-function validateNumberField(inputEl, errorEl, { min = 0, max = Infinity, label = 'Value' } = {}) {
+function validateNumberField(inputEl, errorEl, opts) {
+const min = opts && opts.min !== undefined ? opts.min : 0;
+const max = opts && opts.max !== undefined ? opts.max : Infinity;
+const label = opts && opts.label ? opts.label : 'Value';
 const raw = inputEl.value.trim();
 if (raw === '') {
 inputEl.classList.add('invalid');
@@ -452,8 +497,14 @@ throw new Error('Mesh volume is zero or non-finite (open surface or degenerate t
 return {
 volumeCm3: absVolCm3,
 invertedNormals: signedVolMm3 < 0,
-triangleCount
+triangleCount: triangleCount
 };
+}
+function buildAsciiVertexRegex() {
+const bs = String.fromCharCode(92);
+const num = '([+-]?(?:' + bs + 'd+' + bs + '.?' + bs + 'd*|' + bs + '.' + bs + 'd+)(?:[eE][+-]?' + bs + 'd+)?)';
+const ws = bs + 's+';
+return new RegExp('vertex' + ws + num + ws + num + ws + num, 'gi');
 }
 function parseSTL(buffer) {
 if (!buffer || buffer.byteLength < 15) {
@@ -490,9 +541,8 @@ offset += 38;
 }
 } else {
 const text = new TextDecoder().decode(buffer);
-// Native regex literal with properly preserved \s, \d, and . escapes
-const vertexRegex = /vertex\s+([+-]?(?:\d+.?\d*|.\d+)(?:[eE][+-]?\d+)?)\s+([+-]?(?:\d+.?\d*|.\d+)(?:[eE][+-]?\d+)?)\s+([+-]?(?:\d+.?\d*|.\d+)(?:[eE][+-]?\d+)?)/gi;
-const verts = [];
+const vertexRegex = buildAsciiVertexRegex();
+const verts = Array.of();
 let match;
 while ((match = vertexRegex.exec(text)) !== null) {
 verts.push({
@@ -509,21 +559,20 @@ verts.length = 0;
 }
 return validateMeshResult(totalSignedVolMm3, triangleCount);
 }
-// 3MF 3x4 Affine Matrix Helpers (column-major 3x3 linear + translation):
-// [ m0 m3 m6 m9  ]
-// [ m1 m4 m7 m10 ]
-// [ m2 m5 m8 m11 ]
-const IDENTITY_3X4 =;
+const IDENTITY_3X4 = Array.of(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0);
+function splitWhitespace(str) {
+return str.trim().split(new RegExp(String.fromCharCode(92) + 's+'));
+}
 function parseMatrix3x4(transformAttr) {
 if (!transformAttr) return IDENTITY_3X4;
-const m = transformAttr.trim().split(/\s+/).map(Number);
-if (m.length !== 12 || m.some(v => !Number.isFinite(v))) return IDENTITY_3X4;
-return m;
+const parts = splitWhitespace(transformAttr);
+if (parts.length !== 12) return IDENTITY_3X4;
+const nums = parts.map(Number);
+if (nums.some(v => !Number.isFinite(v))) return IDENTITY_3X4;
+return nums;
 }
-function multiplyMatrix3x4(parent, child) {
-const p = parent;
-const c = child;
-return [
+function multiplyMatrix3x4(p, c) {
+return Array.of(
 p.at(0) * c.at(0) + p.at(3) * c.at(1) + p.at(6) * c.at(2),
 p.at(1) * c.at(0) + p.at(4) * c.at(1) + p.at(7) * c.at(2),
 p.at(2) * c.at(0) + p.at(5) * c.at(1) + p.at(8) * c.at(2),
@@ -536,7 +585,7 @@ p.at(2) * c.at(6) + p.at(5) * c.at(7) + p.at(8) * c.at(8),
 p.at(0) * c.at(9) + p.at(3) * c.at(10) + p.at(6) * c.at(11) + p.at(9),
 p.at(1) * c.at(9) + p.at(4) * c.at(10) + p.at(7) * c.at(11) + p.at(10),
 p.at(2) * c.at(9) + p.at(5) * c.at(10) + p.at(8) * c.at(11) + p.at(11)
-];
+);
 }
 function determinant3x3(m) {
 return (
@@ -545,20 +594,54 @@ m.at(3) * (m.at(1) * m.at(8) - m.at(7) * m.at(2)) +
 m.at(6) * (m.at(1) * m.at(5) - m.at(4) * m.at(2))
 );
 }
-function normalizeZipPath(path) {
-return path.replace(/^/+/, '');
+// Zero-backslash path normalizer & resolver for 3MF archive entries
+function resolve3MFPath(baseModelPath, targetPath) {
+const backslash = String.fromCharCode(92);
+const cleanTarget = String(targetPath || '').split(backslash).join('/').trim();
+if (!cleanTarget) return baseModelPath;
+let combined;
+if (cleanTarget.startsWith('/')) {
+combined = cleanTarget;
+} else {
+const lastSlash = baseModelPath.lastIndexOf('/');
+const baseDir = lastSlash >= 0 ? baseModelPath.slice(0, lastSlash + 1) : '';
+combined = baseDir + cleanTarget;
+}
+const segments = combined.split('/');
+const stack = Array.of();
+for (let i = 0; i < segments.length; i++) {
+const seg = segments.at(i);
+if (!seg || seg === '.') continue;
+if (seg === '..') {
+if (stack.length > 0) stack.pop();
+} else {
+stack.push(seg);
+}
+}
+return stack.join('/');
+}
+function getDocUnitVolumeFactor(doc) {
+const unitAttr = (doc.documentElement.getAttribute('unit') || 'millimeter').toLowerCase();
+const unitToMm = {
+micron: 0.001,
+millimeter: 1,
+centimeter: 10,
+inch: 25.4,
+foot: 304.8,
+meter: 1000
+};
+const linearScale = unitToMm[unitAttr] || 1;
+return Math.pow(linearScale, 3);
 }
 async function parse3MF(buffer) {
-if (typeof JSZip === 'undefined') {
-throw new Error('JSZip library is not loaded. Check internet connection or script URL.');
-}
-const zip = await JSZip.loadAsync(buffer);
+const JSZipLib = await ensureJSZip();
+const zip = await JSZipLib.loadAsync(buffer);
 const parsedDocs = new Map();
 async function getModelDoc(zipPath) {
-const cleanPath = normalizeZipPath(zipPath);
+const cleanPath = resolve3MFPath('', '/' + zipPath);
 if (parsedDocs.has(cleanPath)) return parsedDocs.get(cleanPath);
 const entry = zip.file(cleanPath) ||
-Object.values(zip.files).find(f => normalizeZipPath(f.name).toLowerCase() === cleanPath.toLowerCase());
+Object.values(zip.files).find(f => resolve3MFPath('', '/' + f.name).toLowerCase() === cleanPath.toLowerCase());
 if (!entry) {
 throw new Error('Missing referenced 3MF model part: ' + cleanPath);
 }
@@ -575,24 +658,12 @@ if (!zip.file(rootModelPath)) {
 const fallback = Object.keys(zip.files).find(n => n.toLowerCase().endsWith('3dmodel.model')) ||
 Object.keys(zip.files).find(n => n.toLowerCase().endsWith('.model'));
 if (!fallback) throw new Error('No .model file found inside .3mf archive.');
-rootModelPath = normalizeZipPath(fallback);
+rootModelPath = resolve3MFPath('', '/' + fallback);
 }
 const rootDoc = await getModelDoc(rootModelPath);
-const unitAttr = (rootDoc.documentElement.getAttribute('unit') || 'millimeter').toLowerCase();
-const unitToMm = {
-micron: 0.001,
-millimeter: 1,
-centimeter: 10,
-inch: 25.4,
-foot: 304.8,
-meter: 1000
-};
-const linearScale = unitToMm[unitAttr] || 1;
-const unitVolumeFactor = Math.pow(linearScale, 3);
-// Cache raw base mesh volume (in local model units^3) per object
 const localMeshVolumeCache = new Map();
 let totalTriangles = 0;
-function getLocalMeshVolume(modelPath, objectId, objEl) {
+function getLocalMeshVolumeMm3(modelPath, objectId, objEl, doc) {
 const key = modelPath + '#' + objectId;
 if (localMeshVolumeCache.has(key)) return localMeshVolumeCache.get(key);
 const meshEl = objEl.getElementsByTagName('mesh').item(0);
@@ -600,6 +671,7 @@ if (!meshEl) {
 localMeshVolumeCache.set(key, 0);
 return 0;
 }
+const unitVolFactor = getDocUnitVolumeFactor(doc);
 const vertices = Array.from(meshEl.getElementsByTagName('vertex')).map(v => ({
 x: parseFloat(v.getAttribute('x')),
 y: parseFloat(v.getAttribute('y')),
@@ -617,13 +689,14 @@ signedVol += signedVolumeOfTriangle(v1, v2, v3);
 totalTriangles++;
 }
 }
-localMeshVolumeCache.set(key, signedVol);
-return signedVol;
+const volMm3 = signedVol * unitVolFactor;
+localMeshVolumeCache.set(key, volMm3);
+return volMm3;
 }
-// Recursively traverse component tree with composed 3x4 affine matrices
-async function evaluateInstanceVolumeMm3(modelPath, objectId, worldMatrix, visited = new Set()) {
+async function evaluateInstanceVolumeMm3(modelPath, objectId, worldMatrix, visited) {
+const currentVisited = visited || new Set();
 const visitKey = modelPath + '#' + objectId;
-if (visited.has(visitKey)) {
+if (currentVisited.has(visitKey)) {
 throw new Error('Circular component reference detected in 3MF.');
 }
 const doc = await getModelDoc(modelPath);
@@ -631,24 +704,21 @@ const obj = Array.from(doc.getElementsByTagName('object')).find(
 el => el.getAttribute('id') === String(objectId)
 );
 if (!obj) return 0;
-const nextVisited = new Set(visited);
+const nextVisited = new Set(currentVisited);
 nextVisited.add(visitKey);
 let accumulatedSignedVolMm3 = 0;
-// Leaf mesh contribution scaled by composed world matrix determinant
-const localSignedVol = getLocalMeshVolume(modelPath, objectId, obj);
-if (localSignedVol !== 0) {
+const localSignedVolMm3 = getLocalMeshVolumeMm3(modelPath, objectId, obj, doc);
+if (localSignedVolMm3 !== 0) {
 const det = determinant3x3(worldMatrix);
-// Note: negative determinant (mirror reflection) flips triangle winding, so det * localSignedVol preserves sign
-accumulatedSignedVolMm3 += localSignedVol * det * unitVolumeFactor;
+accumulatedSignedVolMm3 += localSignedVolMm3 * det;
 }
-// Child component recursion
 const components = obj.getElementsByTagName('component');
 for (let i = 0; i < components.length; i++) {
 const comp = components.item(i);
 const targetId = comp.getAttribute('objectid');
 const extPath = comp.getAttribute('p:path') ||
 comp.getAttributeNS('microsoft.com', 'path');
-const targetModelPath = extPath ? normalizeZipPath(extPath) : modelPath;
+const targetModelPath = extPath ? resolve3MFPath(modelPath, extPath) : modelPath;
 const childLocalMatrix = parseMatrix3x4(comp.getAttribute('transform'));
 const composedMatrix = multiplyMatrix3x4(worldMatrix, childLocalMatrix);
 accumulatedSignedVolMm3 += await evaluateInstanceVolumeMm3(
@@ -663,7 +733,8 @@ return accumulatedSignedVolMm3;
 const buildItems = Array.from(rootDoc.getElementsByTagName('item'));
 let totalBuildSignedVolMm3 = 0;
 if (buildItems.length > 0) {
-for (const item of buildItems) {
+for (let i = 0; i < buildItems.length; i++) {
+const item = buildItems.at(i);
 const printable = item.getAttribute('printable');
 if (printable === '0' || printable === 'false') continue;
 const objId = item.getAttribute('objectid');
@@ -671,20 +742,22 @@ const itemMatrix = parseMatrix3x4(item.getAttribute('transform'));
 totalBuildSignedVolMm3 += await evaluateInstanceVolumeMm3(rootModelPath, objId, itemMatrix);
 }
 } else {
-// Fallback when  has no items: only evaluate root objects NOT referenced as child components
 const allObjects = Array.from(rootDoc.getElementsByTagName('object'));
-const referencedChildIds = new Set();
+const referencedKeys = new Set();
 allObjects.forEach(obj => {
 Array.from(obj.getElementsByTagName('component')).forEach(comp => {
+const targetId = comp.getAttribute('objectid');
 const extPath = comp.getAttribute('p:path') ||
 comp.getAttributeNS('microsoft.com', 'path');
-if (!extPath || normalizeZipPath(extPath) === rootModelPath) {
-referencedChildIds.add(comp.getAttribute('objectid'));
-}
+const targetPath = extPath ? resolve3MFPath(rootModelPath, extPath) : rootModelPath;
+referencedKeys.add(targetPath + '#' + targetId);
 });
 });
-const rootObjects = allObjects.filter(obj => !referencedChildIds.has(obj.getAttribute('id')));
-for (const obj of rootObjects) {
+const rootObjects = allObjects.filter(
+obj => !referencedKeys.has(rootModelPath + '#' + obj.getAttribute('id'))
+);
+for (let i = 0; i < rootObjects.length; i++) {
+const obj = rootObjects.at(i);
 totalBuildSignedVolMm3 += await evaluateInstanceVolumeMm3(
 rootModelPath,
 obj.getAttribute('id'),
@@ -713,7 +786,7 @@ return;
 lastParsedVolumeCm3 = result.volumeCm3;
 if (result.invertedNormals) {
 setStatus(
-'Loaded: ' + file.name + ' (' + result.volumeCm3.toFixed(1) + ' cm³ — warning: inverted normals detected)',
+'Loaded: ' + file.name + ' (' + result.volumeCm3.toFixed(1) + ' cm³ — warning: inverted normals)',
 'warn'
 );
 } else {
@@ -730,35 +803,43 @@ lastParsedVolumeCm3 = null;
 setStatus(err.message || 'Error reading mesh file.', 'error');
 }
 }
-// Known-volume synthetic mesh self-test (20x20x20 mm cube = 8.00 cm³)
-function runVolumeSelfTest() {
-const asciiCube = [
+function runSelfTest() {
+const nl = String.fromCharCode(10);
+const asciiCube = Array.of(
 'solid cube20',
-'facet normal 0 0 -1\nouter loop\nvertex 0 0 0\nvertex 0 20 0\nvertex 20 20 0\nendloop\nendfacet',
-'facet normal 0 0 -1\nouter loop\nvertex 0 0 0\nvertex 20 20 0\nvertex 20 0 0\nendloop\nendfacet',
-'facet normal 0 0 1\nouter loop\nvertex 0 0 20\nvertex 20 0 20\nvertex 20 20 20\nendloop\nendfacet',
-'facet normal 0 0 1\nouter loop\nvertex 0 0 20\nvertex 20 20 20\nvertex 0 20 20\nendloop\nendfacet',
-'facet normal 0 -1 0\nouter loop\nvertex 0 0 0\nvertex 20 0 0\nvertex 20 0 20\nendloop\nendfacet',
-'facet normal 0 -1 0\nouter loop\nvertex 0 0 0\nvertex 20 0 20\nvertex 0 0 20\nendloop\nendfacet',
-'facet normal 0 1 0\nouter loop\nvertex 0 20 0\nvertex 0 20 20\nvertex 20 20 20\nendloop\nendfacet',
-'facet normal 0 1 0\nouter loop\nvertex 0 20 0\nvertex 20 20 20\nvertex 20 20 0\nendloop\nendfacet',
-'facet normal -1 0 0\nouter loop\nvertex 0 0 0\nvertex 0 0 20\nvertex 0 20 20\nendloop\nendfacet',
-'facet normal -1 0 0\nouter loop\nvertex 0 0 0\nvertex 0 20 20\nvertex 0 20 0\nendloop\nendfacet',
-'facet normal 1 0 0\nouter loop\nvertex 20 0 0\nvertex 20 20 0\nvertex 20 20 20\nendloop\nendfacet',
-'facet normal 1 0 0\nouter loop\nvertex 20 0 0\nvertex 20 20 20\nvertex 20 0 20\nendloop\nendfacet',
+'facet normal 0 0 -1', 'outer loop', 'vertex 0 0 0', 'vertex 0 20 0', 'vertex 20 20 0', 'endloop', 'endfacet',
+'facet normal 0 0 -1', 'outer loop', 'vertex 0 0 0', 'vertex 20 20 0', 'vertex 20 0 0', 'endloop', 'endfacet',
+'facet normal 0 0 1', 'outer loop', 'vertex 0 0 20', 'vertex 20 0 20', 'vertex 20 20 20', 'endloop', 'endfacet',
+'facet normal 0 0 1', 'outer loop', 'vertex 0 0 20', 'vertex 20 20 20', 'vertex 0 20 20', 'endloop', 'endfacet',
+'facet normal 0 -1 0', 'outer loop', 'vertex 0 0 0', 'vertex 20 0 0', 'vertex 20 0 20', 'endloop', 'endfacet',
+'facet normal 0 -1 0', 'outer loop', 'vertex 0 0 0', 'vertex 20 0 20', 'vertex 0 0 20', 'endloop', 'endfacet',
+'facet normal 0 1 0', 'outer loop', 'vertex 0 20 0', 'vertex 0 20 20', 'vertex 20 20 20', 'endloop', 'endfacet',
+'facet normal 0 1 0', 'outer loop', 'vertex 0 20 0', 'vertex 20 20 20', 'vertex 20 20 0', 'endloop', 'endfacet',
+'facet normal -1 0 0', 'outer loop', 'vertex 0 0 0', 'vertex 0 0 20', 'vertex 0 20 20', 'endloop', 'endfacet',
+'facet normal -1 0 0', 'outer loop', 'vertex 0 0 0', 'vertex 0 20 20', 'vertex 0 20 0', 'endloop', 'endfacet',
+'facet normal 1 0 0', 'outer loop', 'vertex 20 0 0', 'vertex 20 20 0', 'vertex 20 20 20', 'endloop', 'endfacet',
+'facet normal 1 0 0', 'outer loop', 'vertex 20 0 0', 'vertex 20 20 20', 'vertex 20 0 20', 'endloop', 'endfacet',
 'endsolid cube20'
-].join('\n');
+).join(nl);
 const stlRes = parseSTL(new TextEncoder().encode(asciiCube).buffer);
-// Test rotated + 2x scaled matrix composition (expected 8 * 8 = 64.00 cm³)
-const rotZ90 = [0, 1, 0, -1, 0, 0, 0, 0, 1, 10, 5, 0];
-const scale2 =;
+const rotZ90 = Array.of(0, 1, 0, -1, 0, 0, 0, 0, 1, 10, 5, 0);
+const scale2 = Array.of(2, 0, 0, 0, 2, 0, 0, 0, 2, 0, 0, 0);
 const composed = multiplyMatrix3x4(rotZ90, scale2);
 const scaledVol = stlRes.volumeCm3 * Math.abs(determinant3x3(composed));
-const pass = Math.abs(stlRes.volumeCm3 - 8.0) < 1e-6 && Math.abs(scaledVol - 64.0) < 1e-6;
-els.testOutput.textContent = pass
-? PASS: Cube=${stlRes.volumeCm3.toFixed(2)} cm³, Rot+2x=${scaledVol.toFixed(2)} cm³
-: FAIL: Got ${stlRes.volumeCm3.toFixed(2)} cm³;
-els.testOutput.style.color = pass ? 'var(--accent)' : 'var(--error)';
+const relPathOk = resolve3MFPath('3D/Sub/asm.model', '../Objects/part.model') === '3D/Objects/part.model';
+const winPathOk = resolve3MFPath('3D/3dmodel.model', String.fromCharCode(92) + '3D' + String.fromCharCode(92) + 'part.model') === '3D/part.model';
+const pass =
+Math.abs(stlRes.volumeCm3 - 8.0) < 1e-6 &&
+Math.abs(scaledVol - 64.0) < 1e-6 &&
+relPathOk &&
+winPathOk;
+if (pass) {
+els.testOutput.textContent = 'PASS: Cube=' + stlRes.volumeCm3.toFixed(2) + ' cm³, Scaled=' + scaledVol.toFixed(2) + ' cm³';
+els.testOutput.style.color = 'var(--accent)';
+} else {
+els.testOutput.textContent = 'FAIL: Cube=' + stlRes.volumeCm3.toFixed(2) + ' cm³';
+els.testOutput.style.color = 'var(--error)';
+}
 }
 els.dropzone.addEventListener('click', () => els.fileInput.click());
 els.fileInput.addEventListener('change', e => handleFile(e.target.files.item(0)));
@@ -787,5 +868,5 @@ updateCalculations();
 ['filamentGrams', 'spoolKg', 'spoolPrice', 'printHours', 'kwhRate'].forEach(id => {
 els[id].addEventListener('input', updateCalculations);
 });
-els.runSelfTest.addEventListener('click', runVolumeSelfTest);
+els.runSelfTest.addEventListener('click', runSelfTest);
 updateCalculations();
