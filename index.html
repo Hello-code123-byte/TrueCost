@@ -31,7 +31,7 @@
       width: 100%;
       max-width: 920px;
       display: grid;
-      grid-template-columns: 1.25fr 1fr;
+      grid-template-columns: 1.2fr 1fr;
       gap: 1.5rem;
     }
 
@@ -322,7 +322,6 @@
     spoolPriceError: document.getElementById('spoolPriceError'),
     printHours: document.getElementById('printHours'),
     printHoursError: document.getElementById('printHoursError'),
-Use code with caution.
 kwhRate: document.getElementById('kwhRate'),
 kwhRateError: document.getElementById('kwhRateError'),
 totalCost: document.getElementById('totalCost'),
@@ -461,6 +460,7 @@ const spoolGrams = Math.max(1, (parseFloat(els.spoolKg.value) || 1) * 1000);
 els.avgWatts.textContent = steadyWatts + ' W (steady)';
 if (grams === null || spoolPrice === null || hours === null || kwhRate === null) {
 els.totalCost.textContent = '—';
+els.filamentCost.textContent = els.electricityCost.textContent = els.filterCost.textContent = '—';
 return;
 }
 const pricePerGram = spoolPrice / spoolGrams;
@@ -476,6 +476,7 @@ els.formattedTime.textContent = formatDuration(hours);
 els.costPerKg.textContent = '$' + (pricePerGram * 1000).toFixed(2);
 els.filamentCost.textContent = '$' + matCost.toFixed(2);
 els.kwhUsed.textContent = kwh.toFixed(2);
+els.avgWatts.textContent = (hours > 0 ? Math.round((kwh / hours) * 1000) : steadyWatts) + ' W avg (' + steadyWatts + ' W steady)';
 els.electricityCost.textContent = '$' + elecCost.toFixed(2);
 els.filterCost.textContent = '$' + ventoboxCost.toFixed(2);
 }
@@ -511,8 +512,10 @@ if (!buffer || buffer.byteLength < 15) {
 throw new Error('STL file is empty or too small.');
 }
 const view = new DataView(buffer);
-const isBinary = buffer.byteLength >= 84 &&
-(84 + view.getUint32(80, true) * 50 === buffer.byteLength);
+const expectedBinaryLen = buffer.byteLength >= 84 ? 84 + view.getUint32(80, true) * 50 : -1;
+const startsWithSolid = new TextDecoder().decode(new Uint8Array(buffer, 0, 5)).toLowerCase() === 'solid';
+const isBinary = expectedBinaryLen === buffer.byteLength ||
+(!startsWithSolid && expectedBinaryLen > 0 && expectedBinaryLen <= buffer.byteLength);
 let totalSignedVolMm3 = 0;
 let triangleCount = 0;
 if (isBinary) {
@@ -841,8 +844,12 @@ els.testOutput.textContent = 'FAIL: Cube=' + stlRes.volumeCm3.toFixed(2) + ' cm�
 els.testOutput.style.color = 'var(--error)';
 }
 }
+els.fileInput.addEventListener('click', e => e.stopPropagation());
 els.dropzone.addEventListener('click', () => els.fileInput.click());
-els.fileInput.addEventListener('change', e => handleFile(e.target.files.item(0)));
+els.fileInput.addEventListener('change', e => {
+handleFile(e.target.files.item(0));
+e.target.value = '';
+});
 els.dropzone.addEventListener('dragover', e => {
 e.preventDefault();
 els.dropzone.classList.add('dragover');
@@ -870,3 +877,6 @@ els[id].addEventListener('input', updateCalculations);
 });
 els.runSelfTest.addEventListener('click', runSelfTest);
 updateCalculations();
+</script>
+</body>
+</html>
