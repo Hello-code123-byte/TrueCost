@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bambu Lab P2S Cost & Time Estimator</title>
+  <title>Bambu Lab P2S Cost & Time Estimator (V3)</title>
   <script src="https://cloudflare.com"></script>
   <style>
     :root {
@@ -14,6 +14,7 @@
       --muted: #94a3b8;
       --accent: #10b981;
       --accent-hover: #059669;
+      --warn: #f59e0b;
       --error: #ef4444;
     }
 
@@ -29,9 +30,9 @@
 
     .container {
       width: 100%;
-      max-width: 900px;
+      max-width: 920px;
       display: grid;
-      grid-template-columns: 1.2fr 1fr;
+      grid-template-columns: 1.25fr 1fr;
       gap: 1.5rem;
     }
 
@@ -54,7 +55,7 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 1rem;
-      margin-bottom: 1rem;
+      margin-bottom: 0.65rem;
     }
 
     label {
@@ -85,9 +86,9 @@
 
     .field-error {
       color: var(--error);
-      font-size: 0.75rem;
+      font-size: 0.74rem;
       margin-top: 0.25rem;
-      min-height: 1em;
+      min-height: 1.05em;
     }
 
     .dropzone {
@@ -111,9 +112,8 @@
       color: var(--accent);
       margin-top: 0.4rem;
     }
-    .file-status.error {
-      color: var(--error);
-    }
+    .file-status.warn { color: var(--warn); }
+    .file-status.error { color: var(--error); }
 
     .summary-box {
       background: var(--bg);
@@ -141,11 +141,42 @@
 
     .line-item:last-child { border-bottom: none; }
     .line-item span:first-child { color: var(--muted); }
+
     .note {
       font-size: 0.78rem;
       color: var(--muted);
       line-height: 1.45;
       margin-top: 1rem;
+    }
+
+    .test-bar {
+      margin-top: 1rem;
+      padding-top: 0.85rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+    }
+
+    button.secondary {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 0.45rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      cursor: pointer;
+    }
+
+    button.secondary:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .test-output {
+      font-size: 0.75rem;
+      color: var(--muted);
     }
   </style>
 </head>
@@ -174,6 +205,7 @@
           <option value="PA" data-density="1.14" data-watts="250">PA / Nylon (1.14 g/cm³)</option>
           <option value="PC" data-density="1.20" data-watts="255">PC (1.20 g/cm³)</option>
         </select>
+        <div class="field-error"></div>
       </div>
       <div>
         <label for="nozzleSize">Nozzle Diameter</label>
@@ -183,6 +215,7 @@
           <option value="0.6" data-flow="20">0.6 mm (Fast / Structural)</option>
           <option value="0.8" data-flow="26">0.8 mm (Draft / Heavy)</option>
         </select>
+        <div class="field-error"></div>
       </div>
     </div>
 
@@ -190,11 +223,12 @@
       <div>
         <label for="infillPct">Est. Infill % (0–100, for STL/3MF)</label>
         <input type="number" id="infillPct" value="15" min="0" max="100" step="1" />
-        <div class="field-error" id="infillError"></div>
+        <div class="field-error" id="infillPctError"></div>
       </div>
       <div>
         <label for="filamentGrams">Filament Used (grams)</label>
         <input type="number" id="filamentGrams" value="85" min="0" step="0.1" />
+        <div class="field-error" id="filamentGramsError"></div>
       </div>
     </div>
 
@@ -209,10 +243,12 @@
           <option value="3">3.0 kg (3,000g)</option>
           <option value="5">5.0 kg (5,000g)</option>
         </select>
+        <div class="field-error"></div>
       </div>
       <div>
         <label for="spoolPrice">Spool Price ($)</label>
         <input type="number" id="spoolPrice" value="22.00" min="0" step="0.01" />
+        <div class="field-error" id="spoolPriceError"></div>
       </div>
     </div>
 
@@ -220,10 +256,12 @@
       <div>
         <label for="printHours">Est. Print Time (hours)</label>
         <input type="number" id="printHours" value="2.5" min="0" step="0.05" />
+        <div class="field-error" id="printHoursError"></div>
       </div>
       <div>
         <label for="kwhRate">Electricity Rate ($/kWh)</label>
         <input type="number" id="kwhRate" value="0.16" min="0" step="0.01" />
+        <div class="field-error" id="kwhRateError"></div>
       </div>
     </div>
   </div>
@@ -260,6 +298,11 @@
     <p class="note">
       <strong>P2S Power Model:</strong> Includes the ~1,000 W initial bed/nozzle heat-up surge (approx. 4 minutes) plus steady-state chamber/heater draw based on your selected filament profile.
     </p>
+
+    <div class="test-bar">
+      <button type="button" class="secondary" id="runSelfTest">Run Volume Self-Test</button>
+      <span class="test-output" id="testOutput">20mm cube = 8.00 cm³</span>
+    </div>
   </div>
 </div>
 
@@ -271,66 +314,88 @@
     filamentType: document.getElementById('filamentType'),
     nozzleSize: document.getElementById('nozzleSize'),
     infillPct: document.getElementById('infillPct'),
-    infillError: document.getElementById('infillError'),
+    infillPctError: document.getElementById('infillPctError'),
     filamentGrams: document.getElementById('filamentGrams'),
+    filamentGramsError: document.getElementById('filamentGramsError'),
     spoolKg: document.getElementById('spoolKg'),
     spoolPrice: document.getElementById('spoolPrice'),
+    spoolPriceError: document.getElementById('spoolPriceError'),
     printHours: document.getElementById('printHours'),
-    kwhRate: document.getElementById('kwhRate'),
-    totalCost: document.getElementById('totalCost'),
-    formattedTime: document.getElementById('formattedTime'),
-    costPerKg: document.getElementById('costPerKg'),
-    filamentCost: document.getElementById('filamentCost'),
-    kwhUsed: document.getElementById('kwhUsed'),
-    electricityCost: document.getElementById('electricityCost'),
-    filterCost: document.getElementById('filterCost'),
-    avgWatts: document.getElementById('avgWatts')
-  };
-
-  let lastParsedVolumeCm3 = null;
-
-  function setStatus(message, isError = false) {
-    els.fileStatus.textContent = message;
-    els.fileStatus.classList.toggle('error', isError);
-  }
-
-  function formatDuration(hours) {
-    const safeHours = Math.max(0, Number.isFinite(hours) ? hours : 0);
-    const totalMins = Math.round(safeHours * 60);
-    const h = Math.floor(totalMins / 60);
-    const m = totalMins % 60;
-    return h + 'h ' + m + 'm';
-  }
-
-  // Strict infill validation: respects 0% and flags empty or out-of-range values
-  function getValidatedInfillFraction() {
-    const raw = els.infillPct.value.trim();
-    if (raw === '') {
-      els.infillPct.classList.add('invalid');
-      els.infillError.textContent = 'Enter a value from 0 to 100.';
-      return null;
-    }
-    const num = Number(raw);
-    if (!Number.isFinite(num) || num < 0 || num > 100) {
-      els.infillPct.classList.add('invalid');
 Use code with caution.
-els.infillError.textContent = 'Must be between 0% and 100%.';
+printHoursError: document.getElementById('printHoursError'),
+kwhRate: document.getElementById('kwhRate'),
+kwhRateError: document.getElementById('kwhRateError'),
+totalCost: document.getElementById('totalCost'),
+formattedTime: document.getElementById('formattedTime'),
+costPerKg: document.getElementById('costPerKg'),
+filamentCost: document.getElementById('filamentCost'),
+kwhUsed: document.getElementById('kwhUsed'),
+electricityCost: document.getElementById('electricityCost'),
+filterCost: document.getElementById('filterCost'),
+avgWatts: document.getElementById('avgWatts'),
+runSelfTest: document.getElementById('runSelfTest'),
+testOutput: document.getElementById('testOutput')
+};
+let lastParsedVolumeCm3 = null;
+function setStatus(message, state = 'ok') {
+els.fileStatus.textContent = message;
+els.fileStatus.classList.remove('warn', 'error');
+if (state === 'warn') els.fileStatus.classList.add('warn');
+if (state === 'error') els.fileStatus.classList.add('error');
+}
+// Verify JSZip availability on startup
+if (typeof JSZip === 'undefined') {
+setStatus('Warning: JSZip failed to load (.3mf unavailable; .stl & manual modes work)', 'warn');
+}
+function formatDuration(hours) {
+const safeHours = Math.max(0, Number.isFinite(hours) ? hours : 0);
+const totalMins = Math.round(safeHours * 60);
+const h = Math.floor(totalMins / 60);
+const m = totalMins % 60;
+return h + 'h ' + m + 'm';
+}
+// Unified numeric field validator (flags empty, non-finite, negative, or > max)
+function validateNumberField(inputEl, errorEl, { min = 0, max = Infinity, label = 'Value' } = {}) {
+const raw = inputEl.value.trim();
+if (raw === '') {
+inputEl.classList.add('invalid');
+errorEl.textContent = label + ' is required.';
 return null;
 }
-els.infillPct.classList.remove('invalid');
-els.infillError.textContent = '';
-return num / 100;
+const val = Number(raw);
+if (!Number.isFinite(val)) {
+inputEl.classList.add('invalid');
+errorEl.textContent = 'Enter a valid number.';
+return null;
+}
+if (val < min) {
+inputEl.classList.add('invalid');
+errorEl.textContent = 'Cannot be less than ' + min + '.';
+return null;
+}
+if (val > max) {
+inputEl.classList.add('invalid');
+errorEl.textContent = 'Cannot exceed ' + max + '.';
+return null;
+}
+inputEl.classList.remove('invalid');
+errorEl.textContent = '';
+return val;
 }
 function recalculateFromMesh() {
-const infillFraction = getValidatedInfillFraction();
-if (!Number.isFinite(lastParsedVolumeCm3) || lastParsedVolumeCm3 <= 0 || infillFraction === null) {
+const infillPct = validateNumberField(els.infillPct, els.infillPctError, {
+min: 0,
+max: 100,
+label: 'Infill %'
+});
+if (!Number.isFinite(lastParsedVolumeCm3) || lastParsedVolumeCm3 <= 0 || infillPct === null) {
 return;
 }
+const infillFraction = infillPct / 100;
 const filOpt = els.filamentType.options.item(els.filamentType.selectedIndex);
 const nozOpt = els.nozzleSize.options.item(els.nozzleSize.selectedIndex);
 const density = parseFloat(filOpt.getAttribute('data-density'));
 const flowMm3PerSec = parseFloat(nozOpt.getAttribute('data-flow'));
-// 25% outer/top/bottom shell allowance + infill applied to remaining 75%
 const effectiveRatio = 0.25 + (0.75 * infillFraction);
 const effectiveVolCm3 = lastParsedVolumeCm3 * effectiveRatio;
 const grams = effectiveVolCm3 * density;
@@ -341,13 +406,18 @@ els.filamentGrams.value = grams.toFixed(1);
 els.printHours.value = hours.toFixed(2);
 }
 function updateCalculations() {
+const grams = validateNumberField(els.filamentGrams, els.filamentGramsError, { min: 0, label: 'Grams' });
+const spoolPrice = validateNumberField(els.spoolPrice, els.spoolPriceError, { min: 0, label: 'Price' });
+const hours = validateNumberField(els.printHours, els.printHoursError, { min: 0, label: 'Hours' });
+const kwhRate = validateNumberField(els.kwhRate, els.kwhRateError, { min: 0, label: 'Rate' });
 const filOpt = els.filamentType.options.item(els.filamentType.selectedIndex);
 const steadyWatts = parseFloat(filOpt.getAttribute('data-watts')) || 0;
-const grams = Math.max(0, parseFloat(els.filamentGrams.value) || 0);
 const spoolGrams = Math.max(1, (parseFloat(els.spoolKg.value) || 1) * 1000);
-const spoolPrice = Math.max(0, parseFloat(els.spoolPrice.value) || 0);
-const hours = Math.max(0, parseFloat(els.printHours.value) || 0);
-const kwhRate = Math.max(0, parseFloat(els.kwhRate.value) || 0);
+els.avgWatts.textContent = steadyWatts + ' W (steady)';
+if (grams === null || spoolPrice === null || hours === null || kwhRate === null) {
+els.totalCost.textContent = '—';
+return;
+}
 const pricePerGram = spoolPrice / spoolGrams;
 const matCost = grams * pricePerGram;
 const warmupHours = Math.min(hours, 4 / 60);
@@ -363,7 +433,6 @@ els.filamentCost.textContent = '$' + matCost.toFixed(2);
 els.kwhUsed.textContent = kwh.toFixed(2);
 els.electricityCost.textContent = '$' + elecCost.toFixed(2);
 els.filterCost.textContent = '$' + ventoboxCost.toFixed(2);
-els.avgWatts.textContent = steadyWatts + ' W (steady)';
 }
 function signedVolumeOfTriangle(p1, p2, p3) {
 return (
@@ -372,14 +441,19 @@ p2.x * (p1.y * p3.z - p3.y * p1.z) +
 p3.x * (p1.y * p2.z - p2.y * p1.z)
 ) / 6.0;
 }
-function validateVolumeCm3(volCm3, triangleCount) {
+function validateMeshResult(signedVolMm3, triangleCount) {
 if (!triangleCount || triangleCount <= 0) {
 throw new Error('Mesh contains zero valid triangles.');
 }
-if (!Number.isFinite(volCm3) || volCm3 <= 0) {
-throw new Error('Calculated mesh volume is empty or invalid (non-manifold or zero volume).');
+const absVolCm3 = Math.abs(signedVolMm3) / 1000;
+if (!Number.isFinite(absVolCm3) || absVolCm3 <= 0) {
+throw new Error('Mesh volume is zero or non-finite (open surface or degenerate triangles).');
 }
-return volCm3;
+return {
+volumeCm3: absVolCm3,
+invertedNormals: signedVolMm3 < 0,
+triangleCount
+};
 }
 function parseSTL(buffer) {
 if (!buffer || buffer.byteLength < 15) {
@@ -388,13 +462,13 @@ throw new Error('STL file is empty or too small.');
 const view = new DataView(buffer);
 const isBinary = buffer.byteLength >= 84 &&
 (84 + view.getUint32(80, true) * 50 === buffer.byteLength);
-let totalVolMm3 = 0;
+let totalSignedVolMm3 = 0;
 let triangleCount = 0;
 if (isBinary) {
 const triCount = view.getUint32(80, true);
 let offset = 84;
 for (let i = 0; i < triCount; i++) {
-offset += 12; // skip normal vector
+offset += 12;
 const p1 = {
 x: view.getFloat32(offset, true),
 y: view.getFloat32(offset + 4, true),
@@ -410,18 +484,14 @@ x: view.getFloat32(offset + 24, true),
 y: view.getFloat32(offset + 28, true),
 z: view.getFloat32(offset + 32, true)
 };
-totalVolMm3 += signedVolumeOfTriangle(p1, p2, p3);
+totalSignedVolMm3 += signedVolumeOfTriangle(p1, p2, p3);
 triangleCount++;
 offset += 38;
 }
 } else {
 const text = new TextDecoder().decode(buffer);
-// Properly escaped decimal point and numeric token matching
-const numPattern = '([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)';
-const vertexRegex = new RegExp(
-'vertex\s+' + numPattern + '\s+' + numPattern + '\s+' + numPattern,
-'gi'
-);
+// Native regex literal with properly preserved \s, \d, and . escapes
+const vertexRegex = /vertex\s+([+-]?(?:\d+.?\d*|.\d+)(?:[eE][+-]?\d+)?)\s+([+-]?(?:\d+.?\d*|.\d+)(?:[eE][+-]?\d+)?)\s+([+-]?(?:\d+.?\d*|.\d+)(?:[eE][+-]?\d+)?)/gi;
 const verts = [];
 let match;
 while ((match = vertexRegex.exec(text)) !== null) {
@@ -431,34 +501,56 @@ y: parseFloat(match.at(2)),
 z: parseFloat(match.at(3))
 });
 if (verts.length === 3) {
-totalVolMm3 += signedVolumeOfTriangle(verts.at(0), verts.at(1), verts.at(2));
+totalSignedVolMm3 += signedVolumeOfTriangle(verts.at(0), verts.at(1), verts.at(2));
 triangleCount++;
 verts.length = 0;
 }
 }
 }
-const volCm3 = Math.abs(totalVolMm3) / 1000;
-return validateVolumeCm3(volCm3, triangleCount);
+return validateMeshResult(totalSignedVolMm3, triangleCount);
 }
-// Computes absolute volume scale factor from a 3MF 3x4 affine transform string
-function getTransformScaleFactor(transformAttr) {
-if (!transformAttr) return 1;
+// 3MF 3x4 Affine Matrix Helpers (column-major 3x3 linear + translation):
+// [ m0 m3 m6 m9  ]
+// [ m1 m4 m7 m10 ]
+// [ m2 m5 m8 m11 ]
+const IDENTITY_3X4 =;
+function parseMatrix3x4(transformAttr) {
+if (!transformAttr) return IDENTITY_3X4;
 const m = transformAttr.trim().split(/\s+/).map(Number);
-if (m.length !== 12 || m.some(v => !Number.isFinite(v))) return 1;
-// 3MF 3x4 matrix is column-major for 3x3 linear part:
-// [m0 m3 m6; m1 m4 m7; m2 m5 m8]
-const det =
+if (m.length !== 12 || m.some(v => !Number.isFinite(v))) return IDENTITY_3X4;
+return m;
+}
+function multiplyMatrix3x4(parent, child) {
+const p = parent;
+const c = child;
+return [
+p.at(0) * c.at(0) + p.at(3) * c.at(1) + p.at(6) * c.at(2),
+p.at(1) * c.at(0) + p.at(4) * c.at(1) + p.at(7) * c.at(2),
+p.at(2) * c.at(0) + p.at(5) * c.at(1) + p.at(8) * c.at(2),
+p.at(0) * c.at(3) + p.at(3) * c.at(4) + p.at(6) * c.at(5),
+p.at(1) * c.at(3) + p.at(4) * c.at(4) + p.at(7) * c.at(5),
+p.at(2) * c.at(3) + p.at(5) * c.at(4) + p.at(8) * c.at(5),
+p.at(0) * c.at(6) + p.at(3) * c.at(7) + p.at(6) * c.at(8),
+p.at(1) * c.at(6) + p.at(4) * c.at(7) + p.at(7) * c.at(8),
+p.at(2) * c.at(6) + p.at(5) * c.at(7) + p.at(8) * c.at(8),
+p.at(0) * c.at(9) + p.at(3) * c.at(10) + p.at(6) * c.at(11) + p.at(9),
+p.at(1) * c.at(9) + p.at(4) * c.at(10) + p.at(7) * c.at(11) + p.at(10),
+p.at(2) * c.at(9) + p.at(5) * c.at(10) + p.at(8) * c.at(11) + p.at(11)
+];
+}
+function determinant3x3(m) {
+return (
 m.at(0) * (m.at(4) * m.at(8) - m.at(7) * m.at(5)) -
 m.at(3) * (m.at(1) * m.at(8) - m.at(7) * m.at(2)) +
-m.at(6) * (m.at(1) * m.at(5) - m.at(4) * m.at(2));
-return Number.isFinite(det) && det !== 0 ? Math.abs(det) : 1;
+m.at(6) * (m.at(1) * m.at(5) - m.at(4) * m.at(2))
+);
 }
 function normalizeZipPath(path) {
 return path.replace(/^/+/, '');
 }
 async function parse3MF(buffer) {
 if (typeof JSZip === 'undefined') {
-throw new Error('JSZip library failed to load. Check your internet connection.');
+throw new Error('JSZip library is not loaded. Check internet connection or script URL.');
 }
 const zip = await JSZip.loadAsync(buffer);
 const parsedDocs = new Map();
@@ -478,7 +570,6 @@ throw new Error('Malformed XML in ' + cleanPath);
 parsedDocs.set(cleanPath, doc);
 return doc;
 }
-// Find primary 3D model path (defaults to 3D/3dmodel.model per 3MF spec)
 let rootModelPath = '3D/3dmodel.model';
 if (!zip.file(rootModelPath)) {
 const fallback = Object.keys(zip.files).find(n => n.toLowerCase().endsWith('3dmodel.model')) ||
@@ -498,33 +589,23 @@ meter: 1000
 };
 const linearScale = unitToMm[unitAttr] || 1;
 const unitVolumeFactor = Math.pow(linearScale, 3);
-const volumeCache = new Map();
+// Cache raw base mesh volume (in local model units^3) per object
+const localMeshVolumeCache = new Map();
 let totalTriangles = 0;
-async function computeObjectVolumeMm3(modelPath, objectId, visited = new Set()) {
-const cacheKey = modelPath + '#' + objectId;
-if (visited.has(cacheKey)) {
-throw new Error('Circular component reference detected in 3MF.');
+function getLocalMeshVolume(modelPath, objectId, objEl) {
+const key = modelPath + '#' + objectId;
+if (localMeshVolumeCache.has(key)) return localMeshVolumeCache.get(key);
+const meshEl = objEl.getElementsByTagName('mesh').item(0);
+if (!meshEl) {
+localMeshVolumeCache.set(key, 0);
+return 0;
 }
-if (volumeCache.has(cacheKey)) {
-return volumeCache.get(cacheKey);
-}
-const doc = await getModelDoc(modelPath);
-const obj = Array.from(doc.getElementsByTagName('object')).find(
-el => el.getAttribute('id') === String(objectId)
-);
-if (!obj) return 0;
-const nextVisited = new Set(visited);
-nextVisited.add(cacheKey);
-let objVolMm3 = 0;
-// 1. Direct mesh geometry on this object
-const meshEl = obj.getElementsByTagName('mesh').item(0);
-if (meshEl) {
 const vertices = Array.from(meshEl.getElementsByTagName('vertex')).map(v => ({
 x: parseFloat(v.getAttribute('x')),
 y: parseFloat(v.getAttribute('y')),
 z: parseFloat(v.getAttribute('z'))
 }));
-let meshSignedVol = 0;
+let signedVol = 0;
 const triangles = meshEl.getElementsByTagName('triangle');
 for (let i = 0; i < triangles.length; i++) {
 const t = triangles.item(i);
@@ -532,73 +613,152 @@ const v1 = vertices.at(parseInt(t.getAttribute('v1'), 10));
 const v2 = vertices.at(parseInt(t.getAttribute('v2'), 10));
 const v3 = vertices.at(parseInt(t.getAttribute('v3'), 10));
 if (v1 && v2 && v3) {
-meshSignedVol += signedVolumeOfTriangle(v1, v2, v3);
+signedVol += signedVolumeOfTriangle(v1, v2, v3);
 totalTriangles++;
 }
 }
-objVolMm3 += Math.abs(meshSignedVol) * unitVolumeFactor;
+localMeshVolumeCache.set(key, signedVol);
+return signedVol;
 }
-// 2. Referenced child components (including external sub-models via p:path)
+// Recursively traverse component tree with composed 3x4 affine matrices
+async function evaluateInstanceVolumeMm3(modelPath, objectId, worldMatrix, visited = new Set()) {
+const visitKey = modelPath + '#' + objectId;
+if (visited.has(visitKey)) {
+throw new Error('Circular component reference detected in 3MF.');
+}
+const doc = await getModelDoc(modelPath);
+const obj = Array.from(doc.getElementsByTagName('object')).find(
+el => el.getAttribute('id') === String(objectId)
+);
+if (!obj) return 0;
+const nextVisited = new Set(visited);
+nextVisited.add(visitKey);
+let accumulatedSignedVolMm3 = 0;
+// Leaf mesh contribution scaled by composed world matrix determinant
+const localSignedVol = getLocalMeshVolume(modelPath, objectId, obj);
+if (localSignedVol !== 0) {
+const det = determinant3x3(worldMatrix);
+// Note: negative determinant (mirror reflection) flips triangle winding, so det * localSignedVol preserves sign
+accumulatedSignedVolMm3 += localSignedVol * det * unitVolumeFactor;
+}
+// Child component recursion
 const components = obj.getElementsByTagName('component');
 for (let i = 0; i < components.length; i++) {
 const comp = components.item(i);
 const targetId = comp.getAttribute('objectid');
-const extPath = comp.getAttribute('p:path') || comp.getAttributeNS('microsoft.com', 'path');
+const extPath = comp.getAttribute('p:path') ||
+comp.getAttributeNS('microsoft.com', 'path');
 const targetModelPath = extPath ? normalizeZipPath(extPath) : modelPath;
-const scale = getTransformScaleFactor(comp.getAttribute('transform'));
-const childVol = await computeObjectVolumeMm3(targetModelPath, targetId, nextVisited);
-objVolMm3 += childVol * scale;
+const childLocalMatrix = parseMatrix3x4(comp.getAttribute('transform'));
+const composedMatrix = multiplyMatrix3x4(worldMatrix, childLocalMatrix);
+accumulatedSignedVolMm3 += await evaluateInstanceVolumeMm3(
+targetModelPath,
+targetId,
+composedMatrix,
+nextVisited
+);
 }
-volumeCache.set(cacheKey, objVolMm3);
-return objVolMm3;
+return accumulatedSignedVolMm3;
 }
-// Traverse  elements so only instantiated parts are counted
 const buildItems = Array.from(rootDoc.getElementsByTagName('item'));
-let totalBuildVolMm3 = 0;
+let totalBuildSignedVolMm3 = 0;
 if (buildItems.length > 0) {
 for (const item of buildItems) {
 const printable = item.getAttribute('printable');
 if (printable === '0' || printable === 'false') continue;
 const objId = item.getAttribute('objectid');
-const scale = getTransformScaleFactor(item.getAttribute('transform'));
-const itemVol = await computeObjectVolumeMm3(rootModelPath, objId);
-totalBuildVolMm3 += itemVol * scale;
+const itemMatrix = parseMatrix3x4(item.getAttribute('transform'));
+totalBuildSignedVolMm3 += await evaluateInstanceVolumeMm3(rootModelPath, objId, itemMatrix);
 }
 } else {
-// Fallback if a minimal 3MF lacks  items: sum top-level objects once
-const objects = Array.from(rootDoc.getElementsByTagName('object'));
-for (const obj of objects) {
-totalBuildVolMm3 += await computeObjectVolumeMm3(rootModelPath, obj.getAttribute('id'));
+// Fallback when  has no items: only evaluate root objects NOT referenced as child components
+const allObjects = Array.from(rootDoc.getElementsByTagName('object'));
+const referencedChildIds = new Set();
+allObjects.forEach(obj => {
+Array.from(obj.getElementsByTagName('component')).forEach(comp => {
+const extPath = comp.getAttribute('p:path') ||
+comp.getAttributeNS('microsoft.com', 'path');
+if (!extPath || normalizeZipPath(extPath) === rootModelPath) {
+referencedChildIds.add(comp.getAttribute('objectid'));
+}
+});
+});
+const rootObjects = allObjects.filter(obj => !referencedChildIds.has(obj.getAttribute('id')));
+for (const obj of rootObjects) {
+totalBuildSignedVolMm3 += await evaluateInstanceVolumeMm3(
+rootModelPath,
+obj.getAttribute('id'),
+IDENTITY_3X4
+);
 }
 }
-const volCm3 = totalBuildVolMm3 / 1000;
-return validateVolumeCm3(volCm3, totalTriangles);
+return validateMeshResult(totalBuildSignedVolMm3, totalTriangles);
 }
 async function handleFile(file) {
 if (!file) return;
 const ext = file.name.split('.').pop().toLowerCase();
-setStatus('Parsing ' + file.name + '...', false);
+setStatus('Parsing ' + file.name + '...', 'ok');
 try {
 const buffer = await file.arrayBuffer();
-let parsedVol;
+let result;
 if (ext === 'stl') {
-parsedVol = parseSTL(buffer);
+result = parseSTL(buffer);
 } else if (ext === '3mf') {
-parsedVol = await parse3MF(buffer);
+result = await parse3MF(buffer);
 } else {
 lastParsedVolumeCm3 = null;
-setStatus('Unsupported file format. Please upload .stl or .3mf.', true);
+setStatus('Unsupported file format. Please upload .stl or .3mf.', 'error');
 return;
 }
-lastParsedVolumeCm3 = parsedVol;
-setStatus('Loaded: ' + file.name + ' (' + parsedVol.toFixed(1) + ' cm³ solid mesh)', false);
+lastParsedVolumeCm3 = result.volumeCm3;
+if (result.invertedNormals) {
+setStatus(
+'Loaded: ' + file.name + ' (' + result.volumeCm3.toFixed(1) + ' cm³ — warning: inverted normals detected)',
+'warn'
+);
+} else {
+setStatus(
+'Loaded: ' + file.name + ' (' + result.volumeCm3.toFixed(1) + ' cm³, ' + result.triangleCount.toLocaleString() + ' tris)',
+'ok'
+);
+}
 recalculateFromMesh();
 updateCalculations();
 } catch (err) {
 console.error(err);
 lastParsedVolumeCm3 = null;
-setStatus(err.message || 'Error reading mesh file.', true);
+setStatus(err.message || 'Error reading mesh file.', 'error');
 }
+}
+// Known-volume synthetic mesh self-test (20x20x20 mm cube = 8.00 cm³)
+function runVolumeSelfTest() {
+const asciiCube = [
+'solid cube20',
+'facet normal 0 0 -1\nouter loop\nvertex 0 0 0\nvertex 0 20 0\nvertex 20 20 0\nendloop\nendfacet',
+'facet normal 0 0 -1\nouter loop\nvertex 0 0 0\nvertex 20 20 0\nvertex 20 0 0\nendloop\nendfacet',
+'facet normal 0 0 1\nouter loop\nvertex 0 0 20\nvertex 20 0 20\nvertex 20 20 20\nendloop\nendfacet',
+'facet normal 0 0 1\nouter loop\nvertex 0 0 20\nvertex 20 20 20\nvertex 0 20 20\nendloop\nendfacet',
+'facet normal 0 -1 0\nouter loop\nvertex 0 0 0\nvertex 20 0 0\nvertex 20 0 20\nendloop\nendfacet',
+'facet normal 0 -1 0\nouter loop\nvertex 0 0 0\nvertex 20 0 20\nvertex 0 0 20\nendloop\nendfacet',
+'facet normal 0 1 0\nouter loop\nvertex 0 20 0\nvertex 0 20 20\nvertex 20 20 20\nendloop\nendfacet',
+'facet normal 0 1 0\nouter loop\nvertex 0 20 0\nvertex 20 20 20\nvertex 20 20 0\nendloop\nendfacet',
+'facet normal -1 0 0\nouter loop\nvertex 0 0 0\nvertex 0 0 20\nvertex 0 20 20\nendloop\nendfacet',
+'facet normal -1 0 0\nouter loop\nvertex 0 0 0\nvertex 0 20 20\nvertex 0 20 0\nendloop\nendfacet',
+'facet normal 1 0 0\nouter loop\nvertex 20 0 0\nvertex 20 20 0\nvertex 20 20 20\nendloop\nendfacet',
+'facet normal 1 0 0\nouter loop\nvertex 20 0 0\nvertex 20 20 20\nvertex 20 0 20\nendloop\nendfacet',
+'endsolid cube20'
+].join('\n');
+const stlRes = parseSTL(new TextEncoder().encode(asciiCube).buffer);
+// Test rotated + 2x scaled matrix composition (expected 8 * 8 = 64.00 cm³)
+const rotZ90 = [0, 1, 0, -1, 0, 0, 0, 0, 1, 10, 5, 0];
+const scale2 =;
+const composed = multiplyMatrix3x4(rotZ90, scale2);
+const scaledVol = stlRes.volumeCm3 * Math.abs(determinant3x3(composed));
+const pass = Math.abs(stlRes.volumeCm3 - 8.0) < 1e-6 && Math.abs(scaledVol - 64.0) < 1e-6;
+els.testOutput.textContent = pass
+? PASS: Cube=${stlRes.volumeCm3.toFixed(2)} cm³, Rot+2x=${scaledVol.toFixed(2)} cm³
+: FAIL: Got ${stlRes.volumeCm3.toFixed(2)} cm³;
+els.testOutput.style.color = pass ? 'var(--accent)' : 'var(--error)';
 }
 els.dropzone.addEventListener('click', () => els.fileInput.click());
 els.fileInput.addEventListener('change', e => handleFile(e.target.files.item(0)));
@@ -627,5 +787,5 @@ updateCalculations();
 ['filamentGrams', 'spoolKg', 'spoolPrice', 'printHours', 'kwhRate'].forEach(id => {
 els[id].addEventListener('input', updateCalculations);
 });
-getValidatedInfillFraction();
+els.runSelfTest.addEventListener('click', runVolumeSelfTest);
 updateCalculations();
