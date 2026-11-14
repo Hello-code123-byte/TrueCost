@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Bambu Lab P2S Cost & Time Estimator (V5)</title>
+  <title>TrueCost – 3D Print Cost &amp; Time Estimator</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%2312b981'/><g fill='%23fff'><rect x='20' y='13.4' width='60' height='7.3' rx='3.65'/><rect x='20' y='24.2' width='60' height='7.3' rx='3.65'/><rect x='20' y='34.9' width='60' height='7.3' rx='3.65'/><rect x='38.5' y='47.5' width='23' height='7.3' rx='3.65'/><rect x='38.5' y='58.2' width='23' height='7.3' rx='3.65'/><rect x='38.5' y='69' width='23' height='7.3' rx='3.65'/><rect x='38.5' y='80' width='23' height='7.3' rx='3.65'/></g></svg>">
   <style>
   :root {
     --bg: #0a0e13; --surface: #121921; --surface-2: #0d1218; --border: #222d3b;
@@ -28,9 +29,13 @@
     -webkit-font-smoothing: antialiased;
   }
   .page { max-width: 1040px; margin: 0 auto; }
-  header { margin-bottom: 1.75rem; }
-  header h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: -.02em; margin: 0 0 .25rem; }
-  header p { margin: 0; color: var(--muted); }
+  header.brand { display: flex; align-items: center; gap: 1rem; margin-bottom: 1.75rem; }
+  .logo { width: 56px; height: 56px; flex: none; filter: drop-shadow(0 6px 14px rgba(18,185,129,.28)); }
+  .wordmark { font-size: 1.9rem; font-weight: 700; letter-spacing: -.03em; line-height: 1.1; }
+  .wordmark span { color: var(--accent); }
+  header.brand p { margin: .2rem 0 0; color: var(--muted); }
+  header.brand .badge { margin: 0 0 0 auto; align-self: flex-start; white-space: nowrap; }
+  @media (max-width: 560px) { header.brand { flex-wrap: wrap; } header.brand .badge { margin: 0; } }
   .badge {
     display: inline-block; font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
     color: var(--accent); background: var(--accent-soft); padding: .2rem .6rem; border-radius: 999px; margin-bottom: .6rem;
@@ -107,10 +112,13 @@
 </head>
 <body>
 <div class="page">
-  <header>
+  <header class="brand">
+    <svg class="logo" viewBox="0 0 100 100" role="img" aria-label="TrueCost logo"><rect width="100" height="100" rx="22" fill="#12b981"/><g fill="#fff"><rect x="20" y="13.4" width="60" height="7.3" rx="3.65"/><rect x="20" y="24.2" width="60" height="7.3" rx="3.65"/><rect x="20" y="34.9" width="60" height="7.3" rx="3.65"/><rect x="38.5" y="47.5" width="23" height="7.3" rx="3.65"/><rect x="38.5" y="58.2" width="23" height="7.3" rx="3.65"/><rect x="38.5" y="69" width="23" height="7.3" rx="3.65"/><rect x="38.5" y="80" width="23" height="7.3" rx="3.65"/></g></svg>
+    <div>
+      <div class="wordmark">True<span>Cost</span></div>
+      <p>Know what it costs before you hit print.</p>
+    </div>
     <span class="badge">Bambu Lab P2S</span>
-    <h1>Print Cost &amp; Time Estimator</h1>
-    <p>Upload a model to auto-estimate weight and time, or enter your slicer values manually.</p>
   </header>
 
   <div class="container">
