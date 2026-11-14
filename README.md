@@ -1,8 +1,4 @@
-# TrueCost
-Free, single-file 3D print cost and time estimator for Bambu Lab printers. Drop in an STL/3MF or enter slicer numbers to get filament, electricity and filter-wear costs. Runs in your browser, no uploads, no accounts. Independent project, not affiliated with Bambu Lab.
-
-TrueCost:
-Know what it costs before you hit print.
+# TrueCost - Know what it costs before you hit print.
 
 TrueCost is a free, single-file web tool that estimates the real cost and
 print time of a 3D print. It's built with Bambu Lab P2S owners in mind
