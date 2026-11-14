@@ -1,1 +1,435 @@
-hi
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bambu Lab P2S Cost & Time Estimator</title>
+  <script src="https://cloudflare.com"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --accent: #10b981;
+      --accent-hover: #059669;
+    }
+
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+    body {
+      margin: 0;
+      padding: 2rem 1rem;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 900px;
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 1.5rem;
+    }
+
+    @media (max-width: 768px) {
+      .container { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+    }
+
+    h1 { font-size: 1.35rem; margin: 0 0 0.25rem; }
+    h2 { font-size: 1.05rem; margin: 0 0 1rem; color: var(--accent); }
+    p.sub { color: var(--muted); font-size: 0.875rem; margin: 0 0 1.25rem; }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 0.6rem 0.75rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 0.95rem;
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .dropzone {
+      border: 2px dashed var(--border);
+      border-radius: 10px;
+      padding: 1.25rem;
+      text-align: center;
+      cursor: pointer;
+      margin-bottom: 1.25rem;
+      transition: border-color 0.2s, background 0.2s;
+    }
+
+    .dropzone:hover, .dropzone.dragover {
+      border-color: var(--accent);
+      background: rgba(16, 185, 129, 0.06);
+    }
+
+    .dropzone input { display: none; }
+    .file-status {
+      font-size: 0.8rem;
+      color: var(--accent);
+      margin-top: 0.4rem;
+    }
+
+    .summary-box {
+      background: var(--bg);
+      border-radius: 10px;
+      padding: 1.25rem;
+      border: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+
+    .total-label { font-size: 0.85rem; color: var(--muted); }
+    .total-value {
+      font-size: 2.25rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin: 0.2rem 0 0.75rem;
+    }
+
+    .line-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 0.55rem 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+    }
+
+    .line-item:last-child { border-bottom: none; }
+    .line-item span:first-child { color: var(--muted); }
+    .note {
+      font-size: 0.78rem;
+      color: var(--muted);
+      line-height: 1.45;
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="card">
+    <h1>Bambu Lab P2S Estimator</h1>
+    <p class="sub">Upload a model to auto-estimate weight & time, or enter slicer values manually.</p>
+
+    <div class="dropzone" id="dropzone">
+      <strong>Drop .STL or .3MF file here</strong> (or click to browse)
+      <div class="file-status" id="fileStatus">No file loaded — manual mode active</div>
+      <input type="file" id="fileInput" accept=".stl,.3mf" />
+    </div>
+
+    <div class="grid-2">
+      <div>
+        <label for="filamentType">Filament Type</label>
+        <select id="filamentType">
+          <option value="PLA" data-density="1.24" data-watts="180">PLA (1.24 g/cm³)</option>
+          <option value="PETG" data-density="1.27" data-watts="200">PETG (1.27 g/cm³)</option>
+          <option value="ABS" data-density="1.04" data-watts="240">ABS (1.04 g/cm³)</option>
+          <option value="ASA" data-density="1.07" data-watts="245">ASA (1.07 g/cm³)</option>
+          <option value="TPU" data-density="1.21" data-watts="185">TPU (1.21 g/cm³)</option>
+          <option value="PA" data-density="1.14" data-watts="250">PA / Nylon (1.14 g/cm³)</option>
+          <option value="PC" data-density="1.20" data-watts="255">PC (1.20 g/cm³)</option>
+        </select>
+      </div>
+      <div>
+        <label for="nozzleSize">Nozzle Diameter</label>
+        <select id="nozzleSize">
+          <option value="0.2" data-flow="2.5">0.2 mm (Fine Detail)</option>
+          <option value="0.4" data-flow="12" selected>0.4 mm (Standard)</option>
+          <option value="0.6" data-flow="20">0.6 mm (Fast / Structural)</option>
+          <option value="0.8" data-flow="26">0.8 mm (Draft / Heavy)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div>
+        <label for="infillPct">Est. Infill % (for STL/3MF)</label>
+        <input type="number" id="infillPct" value="15" min="0" max="100" />
+      </div>
+      <div>
+        <label for="filamentGrams">Filament Used (grams)</label>
+        <input type="number" id="filamentGrams" value="85" min="0" step="0.1" />
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div>
+        <label for="spoolKg">Spool Weight (kg)</label>
+        <select id="spoolKg">
+          <option value="0.25">0.25 kg (250g)</option>
+          <option value="0.5">0.5 kg (500g)</option>
+          <option value="1" selected>1.0 kg (1,000g)</option>
+          <option value="2">2.0 kg (2,000g)</option>
+          <option value="3">3.0 kg (3,000g)</option>
+          <option value="5">5.0 kg (5,000g)</option>
+        </select>
+      </div>
+      <div>
+        <label for="spoolPrice">Spool Price ($)</label>
+        <input type="number" id="spoolPrice" value="22.00" min="0" step="0.01" />
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div>
+        <label for="printHours">Est. Print Time (hours)</label>
+        <input type="number" id="printHours" value="2.5" min="0" step="0.05" />
+      </div>
+      <div>
+        <label for="kwhRate">Electricity Rate ($/kWh)</label>
+        <input type="number" id="kwhRate" value="0.16" min="0" step="0.01" />
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Cost & Time Breakdown</h2>
+
+    <div class="summary-box">
+      <div class="total-label">Total Estimated Print Cost</div>
+      <div class="total-value" id="totalCost">$0.00</div>
+      <div class="line-item">
+        <span>Estimated Print Duration</span>
+        <strong id="formattedTime">2h 30m</strong>
+      </div>
+    </div>
+
+    <div class="line-item">
+      <span>Filament Cost (<span id="costPerKg">$22.00</span>/kg)</span>
+      <span id="filamentCost">$0.00</span>
+    </div>
+    <div class="line-item">
+      <span>P2S Electricity (<span id="kwhUsed">0.00</span> kWh)</span>
+      <span id="electricityCost">$0.00</span>
+    </div>
+    <div class="line-item">
+      <span>VentoBox Filter Wear (~$0.08/hr)</span>
+      <span id="filterCost">$0.00</span>
+    </div>
+    <div class="line-item">
+      <span>Avg. P2S Power Draw</span>
+      <span id="avgWatts">180 W</span>
+    </div>
+
+    <p class="note">
+      <strong>P2S Power Model:</strong> Includes the ~1,000 W initial bed/nozzle heat-up surge (approx. 4 minutes) plus steady-state chamber/heater draw based on your selected filament profile.
+    </p>
+  </div>
+</div>
+
+<script>
+  const els = {
+    dropzone: document.getElementById('dropzone'),
+    fileInput: document.getElementById('fileInput'),
+    fileStatus: document.getElementById('fileStatus'),
+    filamentType: document.getElementById('filamentType'),
+    nozzleSize: document.getElementById('nozzleSize'),
+    infillPct: document.getElementById('infillPct'),
+    filamentGrams: document.getElementById('filamentGrams'),
+    spoolKg: document.getElementById('spoolKg'),
+    spoolPrice: document.getElementById('spoolPrice'),
+    printHours: document.getElementById('printHours'),
+    kwhRate: document.getElementById('kwhRate'),
+    totalCost: document.getElementById('totalCost'),
+    formattedTime: document.getElementById('formattedTime'),
+    costPerKg: document.getElementById('costPerKg'),
+    filamentCost: document.getElementById('filamentCost'),
+    kwhUsed: document.getElementById('kwhUsed'),
+    electricityCost: document.getElementById('electricityCost'),
+    filterCost: document.getElementById('filterCost'),
+    avgWatts: document.getElementById('avgWatts')
+  };
+
+  let lastParsedVolumeCm3 = null;
+
+  function formatDuration(hours) {
+    const totalMins = Math.round(hours * 60);
+    const h = Math.floor(totalMins / 60);
+    const m = totalMins % 60;
+    return h + 'h ' + m + 'm';
+  }
+
+  function recalculateFromMesh() {
+    if (!lastParsedVolumeCm3) return;
+    const filOpt = els.filamentType.options.item(els.filamentType.selectedIndex);
+    const nozOpt = els.nozzleSize.options.item(els.nozzleSize.selectedIndex);
+    const density = parseFloat(filOpt.getAttribute('data-density'));
+    const flowMm3PerSec = parseFloat(nozOpt.getAttribute('data-flow'));
+    const infill = Math.min(100, Math.max(0, parseFloat(els.infillPct.value) || 15)) / 100;
+
+    const effectiveRatio = 0.25 + (0.75 * infill);
+    const effectiveVolCm3 = lastParsedVolumeCm3 * effectiveRatio;
+    const grams = effectiveVolCm3 * density;
+
+    const effectiveVolMm3 = effectiveVolCm3 * 1000;
+    const extrusionSeconds = (effectiveVolMm3 / flowMm3PerSec) * 1.45;
+    const hours = (extrusionSeconds + 360) / 3600;
+
+    els.filamentGrams.value = grams.toFixed(1);
+    els.printHours.value = hours.toFixed(2);
+  }
+
+  function updateCalculations() {
+    const filOpt = els.filamentType.options.item(els.filamentType.selectedIndex);
+    const steadyWatts = parseFloat(filOpt.getAttribute('data-watts'));
+    const grams = parseFloat(els.filamentGrams.value) || 0;
+Use code with caution.
+const spoolGrams = (parseFloat(els.spoolKg.value) || 1) * 1000;
+const spoolPrice = parseFloat(els.spoolPrice.value) || 0;
+const hours = parseFloat(els.printHours.value) || 0;
+const kwhRate = parseFloat(els.kwhRate.value) || 0;
+const pricePerGram = spoolPrice / spoolGrams;
+const matCost = grams * pricePerGram;
+const warmupHours = Math.min(hours, 4 / 60);
+const steadyHours = Math.max(0, hours - warmupHours);
+const kwh = (warmupHours * 1.0) + (steadyHours * (steadyWatts / 1000));
+const elecCost = kwh * kwhRate;
+const ventoboxCost = hours * 0.08;
+const total = matCost + elecCost + ventoboxCost;
+els.totalCost.textContent = '$' + total.toFixed(2);
+els.formattedTime.textContent = formatDuration(hours);
+els.costPerKg.textContent = '$' + (pricePerGram * 1000).toFixed(2);
+els.filamentCost.textContent = '$' + matCost.toFixed(2);
+els.kwhUsed.textContent = kwh.toFixed(2);
+els.electricityCost.textContent = '$' + elecCost.toFixed(2);
+els.filterCost.textContent = '$' + ventoboxCost.toFixed(2);
+els.avgWatts.textContent = steadyWatts + ' W (steady)';
+}
+function signedVolumeOfTriangle(p1, p2, p3) {
+return (
+p1.x * (p2.y * p3.z - p3.y * p2.z) -
+p2.x * (p1.y * p3.z - p3.y * p1.z) +
+p3.x * (p1.y * p2.z - p2.y * p1.z)
+) / 6.0;
+}
+function parseSTL(buffer) {
+const view = new DataView(buffer);
+const isBinary = buffer.byteLength > 84 &&
+(84 + view.getUint32(80, true) * 50 === buffer.byteLength);
+let totalVolMm3 = 0;
+if (isBinary) {
+const triCount = view.getUint32(80, true);
+let offset = 84;
+for (let i = 0; i < triCount; i++) {
+offset += 12;
+const p1 = { x: view.getFloat32(offset, true), y: view.getFloat32(offset + 4, true), z: view.getFloat32(offset + 8, true) };
+const p2 = { x: view.getFloat32(offset + 12, true), y: view.getFloat32(offset + 16, true), z: view.getFloat32(offset + 20, true) };
+const p3 = { x: view.getFloat32(offset + 24, true), y: view.getFloat32(offset + 28, true), z: view.getFloat32(offset + 32, true) };
+totalVolMm3 += signedVolumeOfTriangle(p1, p2, p3);
+offset += 38;
+}
+} else {
+const text = new TextDecoder().decode(buffer);
+const vertexRegex = /vertex\s+([+-]?\d*.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*.?\d+(?:[eE][+-]?\d+)?)\s+([+-]?\d*.?\d+(?:[eE][+-]?\d+)?)/g;
+const verts = [];
+let match;
+while ((match = vertexRegex.exec(text)) !== null) {
+verts.push({ x: parseFloat(match.at(1)), y: parseFloat(match.at(2)), z: parseFloat(match.at(3)) });
+if (verts.length === 3) {
+totalVolMm3 += signedVolumeOfTriangle(verts.at(0), verts.at(1), verts.at(2));
+verts.length = 0;
+}
+}
+}
+return Math.abs(totalVolMm3) / 1000;
+}
+async function parse3MF(buffer) {
+const zip = await JSZip.loadAsync(buffer);
+let totalVolMm3 = 0;
+const modelFiles = Object.keys(zip.files).filter(name => name.endsWith('.model'));
+for (const fileName of modelFiles) {
+const xmlText = await zip.files[fileName].async('text');
+const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+const meshes = doc.querySelectorAll('mesh');
+meshes.forEach(mesh => {
+const vertices = Array.from(mesh.querySelectorAll('vertices vertex')).map(v => ({
+x: parseFloat(v.getAttribute('x')),
+y: parseFloat(v.getAttribute('y')),
+z: parseFloat(v.getAttribute('z'))
+}));
+mesh.querySelectorAll('triangles triangle').forEach(t => {
+const v1 = vertices.at(parseInt(t.getAttribute('v1'), 10));
+const v2 = vertices.at(parseInt(t.getAttribute('v2'), 10));
+const v3 = vertices.at(parseInt(t.getAttribute('v3'), 10));
+if (v1 && v2 && v3) {
+totalVolMm3 += signedVolumeOfTriangle(v1, v2, v3);
+}
+});
+});
+}
+return Math.abs(totalVolMm3) / 1000;
+}
+async function handleFile(file) {
+if (!file) return;
+const ext = file.name.split('.').pop().toLowerCase();
+els.fileStatus.textContent = 'Parsing ' + file.name + '...';
+try {
+const buffer = await file.arrayBuffer();
+if (ext === 'stl') {
+lastParsedVolumeCm3 = parseSTL(buffer);
+} else if (ext === '3mf') {
+lastParsedVolumeCm3 = await parse3MF(buffer);
+} else {
+els.fileStatus.textContent = 'Unsupported file format. Please upload .stl or .3mf.';
+return;
+}
+els.fileStatus.textContent = 'Loaded: ' + file.name + ' (' + lastParsedVolumeCm3.toFixed(1) + ' cm³ solid mesh)';
+recalculateFromMesh();
+updateCalculations();
+} catch (err) {
+console.error(err);
+els.fileStatus.textContent = 'Error reading mesh file. Check console for details.';
+}
+}
+els.dropzone.addEventListener('click', () => els.fileInput.click());
+els.fileInput.addEventListener('change', e => handleFile(e.target.files.item(0)));
+els.dropzone.addEventListener('dragover', e => {
+e.preventDefault();
+els.dropzone.classList.add('dragover');
+});
+els.dropzone.addEventListener('dragleave', () => els.dropzone.classList.remove('dragover'));
+els.dropzone.addEventListener('drop', e => {
+e.preventDefault();
+els.dropzone.classList.remove('dragover');
+handleFile(e.dataTransfer.files.item(0));
+});
+['filamentType', 'nozzleSize', 'infillPct'].forEach(id => {
+els[id].addEventListener('change', () => {
+recalculateFromMesh();
+updateCalculations();
+});
+});
+['filamentGrams', 'spoolKg', 'spoolPrice', 'printHours', 'kwhRate'].forEach(id => {
+els[id].addEventListener('input', updateCalculations);
+});
+updateCalculations();
